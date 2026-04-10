@@ -1,0 +1,21 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm install:*)",
+      "Bash(npx concurrently:*)",
+      "Bash(npx tsc:*)",
+      "Bash(npm ls:*)",
+      "Bash(echo \"EXIT:$?\")",
+      "Bash(npm i:*)",
+      "Bash(npx dotenv:*)",
+      "Bash(npx node-pg-migrate:*)",
+      "Bash(PGPASSWORD=varnika psql:*)",
+      "Bash(where psql.exe)",
+      "Read(//c/Program Files/PostgreSQL/**)",
+      "Read(//c/Program Files \\(x86\\)/**)",
+      "Bash(PGPASSWORD=varnika /c/Program Files/PostgreSQL/18/bin/psql.exe:*)",
+      "Bash(echo \"FE:$?\")",
+      "Bash(echo \"BE:$?\")"
+    ]
+  }
+}

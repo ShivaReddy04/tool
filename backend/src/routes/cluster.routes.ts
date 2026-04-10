@@ -1,0 +1,40 @@
+import { Router } from 'express';
+import { authenticate } from '../middleware/auth';
+import {
+  create,
+  list,
+  getById,
+  update,
+  remove,
+  testById,
+  testDirect,
+  getDataTypesForCluster,
+  getDatabases,
+  getSchemas,
+  getTables,
+  getColumns,
+} from '../controllers/cluster.controller';
+
+const router = Router();
+
+router.use(authenticate);
+
+// CRUD
+router.post('/', create);
+router.get('/', list);
+router.get('/:id', getById);
+router.put('/:id', update);
+router.delete('/:id', remove);
+
+// Connection testing
+router.post('/test', testDirect);
+router.post('/:id/test', testById);
+
+// Introspection
+router.get('/:id/data-types', getDataTypesForCluster);
+router.get('/:id/databases', getDatabases);
+router.get('/:id/schemas', getSchemas);
+router.get('/:id/tables', getTables);
+router.get('/:id/columns', getColumns);
+
+export default router;
