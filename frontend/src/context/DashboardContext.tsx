@@ -466,7 +466,17 @@ export const DashboardProvider: React.FC<{ children: React.ReactNode }> = ({
           createdAt: t.created_at,
           updatedAt: t.updated_at
         }));
-        setTables(mappedSummary);
+        // Merge DART metadata tables with the physical target database tables (which exist in prev state)
+        setTables(prev => {
+          const merged = [...mappedSummary];
+          const dartNames = new Set(mappedSummary.map((m: any) => m.name));
+          for (const p of prev) {
+            if (!dartNames.has(p.name)) {
+              merged.push(p);
+            }
+          }
+          return merged;
+        });
       })
       .catch(err => {
         console.error(err);
