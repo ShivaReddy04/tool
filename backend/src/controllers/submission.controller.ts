@@ -5,6 +5,7 @@ import { getColumnDefinitionsByTableId } from '../models/column_definition.model
 import { getClusterConnectionConfig } from '../models/cluster.model';
 import { getConnector } from '../services/connector';
 import { createAuditLog } from '../models/audit_log.model';
+import { broadcastSubmissionEvent } from '../utils/webhook';
 
 export const submitTableForReview = async (req: Request, res: Response): Promise<void> => {
     try {
@@ -24,6 +25,13 @@ export const submitTableForReview = async (req: Request, res: Response): Promise
             user_name: submittedBy,
             metadata: { table_id: tableId }
         });
+
+        const tableDef = await getTableDefinitionDetails(tableId);
+        broadcastSubmissionEvent('SUBMITTED', {
+            submittedBy,
+            tableName: tableDef?.table_name || tableId,
+            linkId: submission.id
+        }).catch(e => console.error("Webhook broadcast failed softly:", e));
 
         res.status(201).json(submission);
     } catch (err) {
@@ -95,6 +103,14 @@ export const handleReviewAndSync = async (req: Request, res: Response): Promise<
                 return;
             }
         }
+        const tableDef = await getTableDefinitionDetails(reviewedSubmission.table_id);
+
+        broadcastSubmissionEvent(status === 'approved' ? 'APPROVED' : 'REJECTED', {
+            submittedBy: reviewedBy,
+            tableName: tableDef?.table_name || reviewedSubmission.table_id,
+            linkId: id,
+            reason: rejectionReason
+        }).catch(e => console.error("Webhook broadcast failed softly:", e));
 
         res.status(200).json(reviewedSubmission);
     } catch (err) {
