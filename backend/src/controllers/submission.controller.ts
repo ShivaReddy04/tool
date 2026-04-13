@@ -4,6 +4,7 @@ import { updateTableStatus, getTableDefinitionDetails } from '../models/table_de
 import { getColumnDefinitionsByTableId } from '../models/column_definition.model';
 import { getClusterConnectionConfig } from '../models/cluster.model';
 import { getConnector } from '../services/connector';
+import { createAuditLog } from '../models/audit_log.model';
 
 export const submitTableForReview = async (req: Request, res: Response): Promise<void> => {
     try {
@@ -15,6 +16,14 @@ export const submitTableForReview = async (req: Request, res: Response): Promise
 
         await updateTableStatus(tableId, 'submitted');
         const submission = await createSubmission(tableId, submittedBy);
+
+        await createAuditLog({
+            action: 'SUBMIT_FOR_REVIEW',
+            entity_type: 'submission',
+            entity_id: submission.id,
+            user_name: submittedBy,
+            metadata: { table_id: tableId }
+        });
 
         res.status(201).json(submission);
     } catch (err) {
@@ -46,6 +55,14 @@ export const handleReviewAndSync = async (req: Request, res: Response): Promise<
         const reviewedSubmission = await reviewSubmission(id, reviewedBy, status, rejectionReason);
         await updateTableStatus(reviewedSubmission.table_id, status);
 
+        await createAuditLog({
+            action: status === 'approved' ? 'APPROVE_SUBMISSION' : 'REJECT_SUBMISSION',
+            entity_type: 'submission',
+            entity_id: id,
+            user_name: reviewedBy,
+            metadata: { table_id: reviewedSubmission.table_id, reason: rejectionReason }
+        });
+
         if (status === 'approved') {
             try {
                 // Sync Hook logic
@@ -62,6 +79,14 @@ export const handleReviewAndSync = async (req: Request, res: Response): Promise<
 
                         await connector.executeDDL(connInfo.config, ddl);
                         await updateTableStatus(reviewedSubmission.table_id, 'applied');
+
+                        await createAuditLog({
+                            action: 'EXECUTE_DDL',
+                            entity_type: 'table_definition',
+                            entity_id: reviewedSubmission.table_id,
+                            user_name: 'DART_SYSTEM',
+                            metadata: { target_cluster: connInfo.cluster.name, target_schema: tableDef.schema_name, target_table: tableDef.table_name }
+                        });
                     }
                 }
             } catch (syncErr) {

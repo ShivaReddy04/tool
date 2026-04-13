@@ -3,6 +3,7 @@ import { createOrUpdateTableDefinition, getTableDefinitionDetails, getAllTableDe
 import { bulkUpsertColumnDefinitions, getColumnDefinitionsByTableId } from '../models/column_definition.model';
 import { getClusterConnectionConfig } from '../models/cluster.model';
 import { getConnector } from '../services/connector';
+import { createAuditLog } from '../models/audit_log.model';
 
 export const saveTableDefinition = async (req: Request, res: Response): Promise<void> => {
     try {
@@ -21,6 +22,15 @@ export const saveTableDefinition = async (req: Request, res: Response): Promise<
         }
 
         const savedColumns = await getColumnDefinitionsByTableId(savedTable.id);
+
+        await createAuditLog({
+            action: 'SAVE_TABLE',
+            entity_type: 'table_definition',
+            entity_id: savedTable.id,
+            user_name: 'Developer', // We can extract from JWT once integrated
+            metadata: { table_name: savedTable.table_name, column_count: columns?.length || 0 }
+        });
+
         res.status(200).json({ table: savedTable, columns: savedColumns });
     } catch (err) {
         console.error('Save table definition error:', err);
