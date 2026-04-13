@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useCallback, useEffect } from "react";
+import api from "../api/client";
 import type {
   Cluster,
   Schema,
@@ -97,14 +98,14 @@ function loadPersistedState() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw) return JSON.parse(raw);
-  } catch {}
+  } catch { }
   return null;
 }
 
 function persistState(state: Record<string, unknown>) {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-  } catch {}
+  } catch { }
 }
 
 export const DashboardProvider: React.FC<{ children: React.ReactNode }> = ({
@@ -194,99 +195,151 @@ export const DashboardProvider: React.FC<{ children: React.ReactNode }> = ({
   }, []);
 
   // Save & Submit actions
-  const saveChanges = useCallback(() => {
-    setHasUnsavedChanges(false);
-    addToast("success", "Changes saved successfully.");
-  }, [addToast]);
+  const saveChanges = useCallback(async () => {
+    if (!tableDefinition) return;
+    try {
+      // Map to db format
+      const dbTableDef = {
+        id: tableDefinition.id?.startsWith('tbl-new') ? undefined : tableDefinition.id,
+        connection_id: selectedClusterId,
+        database_name: 'default_db',
+        schema_name: schemas.find(s => s.id === selectedSchemaId)?.name || 'public',
+        table_name: tableDefinition.tableName,
+        entity_logical_name: tableDefinition.entityLogicalName,
+        distribution_style: tableDefinition.distributionStyle,
+        keys: tableDefinition.keys,
+        vertical_name: tableDefinition.verticalName,
+        business_area_id: selectedBusinessAreaId || undefined,
+        status: submissionStatus
+      };
+
+      const dbColumns = columns.map(c => ({
+        id: c.id,
+        column_name: c.columnName,
+        data_type: c.dataType,
+        is_nullable: c.isNullable,
+        is_primary_key: c.isPrimaryKey,
+        data_classification: c.dataClassification,
+        data_domain: c.dataDomain,
+        attribute_definition: c.attributeDefinition,
+        default_value: c.defaultValue,
+        action: c.action,
+        sort_order: 0
+      }));
+
+      const res = await api.post('/table-definitions', { table: dbTableDef, columns: dbColumns });
+
+      if (!tableDefinition.id || tableDefinition.id.startsWith('tbl-new')) {
+        setTableDefinition(prev => prev ? { ...prev, id: res.data.table.id } : null);
+      }
+
+      setHasUnsavedChanges(false);
+      addToast("success", "Changes saved successfully.");
+    } catch (err) {
+      console.error(err);
+      addToast("error", "Failed to save changes.");
+    }
+  }, [tableDefinition, columns, selectedClusterId, selectedSchemaId, schemas, selectedBusinessAreaId, submissionStatus, addToast]);
 
   const submitForReview = useCallback(
-    (submittedByName: string) => {
-      if (!tableDefinition) return;
-      setSubmissionStatus("submitted");
-      setHasUnsavedChanges(false);
+    async (submittedByName: string) => {
+      if (!tableDefinition || !tableDefinition.id || tableDefinition.id.startsWith('tbl-new')) {
+        addToast("error", "Please save the table before submitting.");
+        return;
+      }
+      try {
+        const res = await api.post('/submissions', { tableId: tableDefinition.id, submittedBy: submittedByName });
+        setSubmissionStatus("submitted");
+        setHasUnsavedChanges(false);
 
-      const notification: Notification = {
-        id: `notif-${Date.now()}`,
-        type: "submission",
-        title: "Table Submitted for Review",
-        message: `${submittedByName} submitted "${tableDefinition.tableName}" for review.`,
-        tableName: tableDefinition.tableName,
-        submittedBy: submittedByName,
-        timestamp: new Date().toISOString(),
-        isRead: false,
-        targetRole: "architect",
-        tableDefinition: { ...tableDefinition },
-        columns: columns.map((c) => ({ ...c })),
-      };
-      addNotification(notification);
-      addToast("success", `"${tableDefinition.tableName}" submitted for Architect review.`);
+        const notification: Notification = {
+          id: `notif-${Date.now()}`,
+          type: "submission",
+          title: "Table Submitted for Review",
+          message: `${submittedByName} submitted "${tableDefinition.tableName}" for review.`,
+          tableName: tableDefinition.tableName,
+          submittedBy: submittedByName,
+          timestamp: new Date().toISOString(),
+          isRead: false,
+          targetRole: "architect",
+          submissionId: res.data.id,
+          tableDefinition: { ...tableDefinition },
+          columns: columns.map((c) => ({ ...c })),
+        };
+        addNotification(notification);
+        addToast("success", `"${tableDefinition.tableName}" submitted for Architect review.`);
+      } catch (err) {
+        console.error(err);
+        addToast("error", "Failed to submit for review.");
+      }
     },
     [tableDefinition, columns, addNotification, addToast]
   );
 
   // Architect review actions
   const approveSubmission = useCallback(
-    (architectName: string) => {
-      if (!reviewingNotification) return;
+    async (architectName: string) => {
+      if (!reviewingNotification || !reviewingNotification.submissionId) {
+        addToast("error", "Missing submission ID");
+        return;
+      }
+      try {
+        await api.post(`/submissions/${reviewingNotification.submissionId}/review`, { reviewedBy: architectName, status: "approved" });
+        markNotificationRead(reviewingNotification.id);
+        setSubmissionStatus("approved");
 
-      // Mark submission notification as read
-      markNotificationRead(reviewingNotification.id);
+        const approvalNotif: Notification = {
+          id: `notif-${Date.now()}`,
+          type: "approval",
+          title: "Table Approved",
+          message: `${architectName} approved "${reviewingNotification.tableName}" and updated the data model in target cluster.`,
+          tableName: reviewingNotification.tableName,
+          submittedBy: architectName,
+          timestamp: new Date().toISOString(),
+          isRead: false,
+          targetRole: "developer",
+        };
+        addNotification(approvalNotif);
 
-      // Update submission status
-      setSubmissionStatus("approved");
-
-      // Send approval notification to Developer
-      const approvalNotif: Notification = {
-        id: `notif-${Date.now()}`,
-        type: "approval",
-        title: "Table Approved",
-        message: `${architectName} approved "${reviewingNotification.tableName}" and updated the data model in Redshift.`,
-        tableName: reviewingNotification.tableName,
-        submittedBy: architectName,
-        timestamp: new Date().toISOString(),
-        isRead: false,
-        targetRole: "developer",
-      };
-      addNotification(approvalNotif);
-
-      // Close review drawer
-      setIsReviewDrawerOpen(false);
-      setReviewingNotification(null);
-
-      addToast("success", `"${reviewingNotification.tableName}" approved — data model updated in Redshift.`);
+        setIsReviewDrawerOpen(false);
+        setReviewingNotification(null);
+        addToast("success", `"${reviewingNotification.tableName}" approved — data model updated.`);
+      } catch (err) {
+        console.error(err);
+        addToast("error", "Failed to push approval database changes.");
+      }
     },
     [reviewingNotification, markNotificationRead, addNotification, addToast]
   );
 
   const rejectSubmission = useCallback(
-    (architectName: string, reason?: string) => {
-      if (!reviewingNotification) return;
+    async (architectName: string, reason?: string) => {
+      if (!reviewingNotification || !reviewingNotification.submissionId) return;
+      try {
+        await api.post(`/submissions/${reviewingNotification.submissionId}/review`, { reviewedBy: architectName, status: "rejected", rejectionReason: reason });
+        markNotificationRead(reviewingNotification.id);
+        setSubmissionStatus("rejected");
 
-      // Mark submission notification as read
-      markNotificationRead(reviewingNotification.id);
+        const rejectionNotif: Notification = {
+          id: `notif-${Date.now()}`,
+          type: "rejection",
+          title: "Table Rejected",
+          message: `${architectName} rejected "${reviewingNotification.tableName}".${reason ? ` Reason: ${reason}` : ""}`,
+          tableName: reviewingNotification.tableName,
+          submittedBy: architectName,
+          timestamp: new Date().toISOString(),
+          isRead: false,
+          targetRole: "developer",
+        };
+        addNotification(rejectionNotif);
 
-      // Update submission status
-      setSubmissionStatus("rejected");
-
-      // Send rejection notification to Developer
-      const rejectionNotif: Notification = {
-        id: `notif-${Date.now()}`,
-        type: "rejection",
-        title: "Table Rejected",
-        message: `${architectName} rejected "${reviewingNotification.tableName}".${reason ? ` Reason: ${reason}` : ""}`,
-        tableName: reviewingNotification.tableName,
-        submittedBy: architectName,
-        timestamp: new Date().toISOString(),
-        isRead: false,
-        targetRole: "developer",
-      };
-      addNotification(rejectionNotif);
-
-      // Close review drawer
-      setIsReviewDrawerOpen(false);
-      setReviewingNotification(null);
-
-      addToast("info", `"${reviewingNotification.tableName}" has been rejected.`);
+        setIsReviewDrawerOpen(false);
+        setReviewingNotification(null);
+        addToast("info", `"${reviewingNotification.tableName}" has been rejected.`);
+      } catch (err) {
+        console.error(err);
+        addToast("error", "Failed to record rejection.");
+      }
     },
     [reviewingNotification, markNotificationRead, addNotification, addToast]
   );
@@ -316,18 +369,86 @@ export const DashboardProvider: React.FC<{ children: React.ReactNode }> = ({
     [selectedSchemaId, addToast]
   );
 
+  // Refresh metadata — reload clusters, schemas, and tables
+  const refreshMetadata = useCallback(async () => {
+    try {
+      const [clusterRes, areaRes] = await Promise.all([
+        api.get("/clusters"),
+        api.get("/business-areas")
+      ]);
+      setClusters(clusterRes.data);
+      setBusinessAreas(areaRes.data.map((a: any) => ({
+        id: a.id,
+        name: a.name,
+        description: a.description
+      })));
+      addToast("success", "Metadata refreshed.");
+    } catch (err) {
+      console.error(err);
+      addToast("error", "Failed to load metadata.");
+    }
+  }, [addToast]);
+
   // Track whether this is the initial mount (to skip overwriting persisted data)
   const isInitialMount = React.useRef(true);
+
+  // Initial mount load
+  useEffect(() => {
+    if (isInitialMount.current) {
+      refreshMetadata();
+    }
+  }, [refreshMetadata]);
+
+  // Load schemas when cluster is selected
+  useEffect(() => {
+    if (isInitialMount.current) return;
+    if (!selectedClusterId) {
+      setSchemas([]);
+      return;
+    }
+    api.get(`/schemas/cluster/${selectedClusterId}`)
+      .then(res => setSchemas(res.data.map((s: any) => ({
+        id: s.id,
+        name: s.name,
+        clusterId: s.cluster_id
+      }))))
+      .catch(console.error);
+  }, [selectedClusterId]);
 
   // Load tables when a schema is selected
   useEffect(() => {
     if (isInitialMount.current) return; // Skip on mount — persisted state is already loaded
-    // TODO: fetch tables from API for selectedSchemaId
-    setTables([]);
+    if (!selectedSchemaId) {
+      setTables([]);
+      setSelectedTableId("");
+      setTableDefinition(null);
+      setColumns([]);
+      return;
+    }
+    const schemaObj = schemas.find(s => s.id === selectedSchemaId);
+    if (!schemaObj || !selectedClusterId) return;
+
+    api.get(`/table-definitions?connectionId=${selectedClusterId}&schemaName=${schemaObj.name}`)
+      .then(res => {
+        const mappedSummary = res.data.map((t: any) => ({
+          id: t.id,
+          name: t.table_name,
+          schemaId: selectedSchemaId,
+          columnCount: 0,
+          createdAt: t.created_at,
+          updatedAt: t.updated_at
+        }));
+        setTables(mappedSummary);
+      })
+      .catch(err => {
+        console.error(err);
+        addToast("error", "Failed to load tables.");
+      });
+
     setSelectedTableId("");
     setTableDefinition(null);
     setColumns([]);
-  }, [selectedSchemaId]);
+  }, [selectedSchemaId, selectedClusterId, schemas, addToast]);
 
   // Load table definition & columns when a table is selected
   useEffect(() => {
@@ -336,10 +457,34 @@ export const DashboardProvider: React.FC<{ children: React.ReactNode }> = ({
       return; // Skip on mount — persisted state is already loaded
     }
     if (selectedTableId) {
-      // TODO: fetch table definition + columns from API
-      setCurrentStep(3);
-      setSubmissionStatus("draft");
-      setHasUnsavedChanges(false);
+      api.get(`/table-definitions/${selectedTableId}`)
+        .then(res => {
+          setTableDefinition({
+            id: res.data.table.id,
+            tableName: res.data.table.table_name,
+            entityLogicalName: res.data.table.entity_logical_name || '',
+            distributionStyle: res.data.table.distribution_style || 'AUTO',
+            keys: res.data.table.keys || '',
+            verticalName: res.data.table.vertical_name || '',
+            columns: res.data.columns
+          });
+          setColumns(res.data.columns.map((c: any) => ({
+            id: c.id,
+            columnName: c.column_name,
+            dataType: c.data_type,
+            isNullable: c.is_nullable,
+            isPrimaryKey: c.is_primary_key,
+            dataClassification: c.data_classification,
+            dataDomain: c.data_domain || '',
+            attributeDefinition: c.attribute_definition || '',
+            defaultValue: c.default_value || '',
+            action: c.action
+          })));
+          setCurrentStep(3);
+          setSubmissionStatus(res.data.table.status);
+          setHasUnsavedChanges(false);
+        })
+        .catch(console.error);
     } else {
       setTableDefinition(null);
       setColumns([]);
@@ -377,20 +522,41 @@ export const DashboardProvider: React.FC<{ children: React.ReactNode }> = ({
   );
 
   // Refresh table — reload columns for the currently selected table
-  const refreshTable = useCallback(() => {
+  const refreshTable = useCallback(async () => {
     if (!selectedTableId) return;
-    // TODO: re-fetch table definition + columns from API
-    setSelectedColumnId("");
-    setRightPanelMode("properties");
-    setHasUnsavedChanges(false);
-    addToast("success", "Table data refreshed.");
+    try {
+      const res = await api.get(`/table-definitions/${selectedTableId}`);
+      setTableDefinition({
+        id: res.data.table.id,
+        tableName: res.data.table.table_name,
+        entityLogicalName: res.data.table.entity_logical_name || '',
+        distributionStyle: res.data.table.distribution_style || 'AUTO',
+        keys: res.data.table.keys || '',
+        verticalName: res.data.table.vertical_name || '',
+        columns: res.data.columns
+      });
+      setColumns(res.data.columns.map((c: any) => ({
+        id: c.id,
+        columnName: c.column_name,
+        dataType: c.data_type,
+        isNullable: c.is_nullable,
+        isPrimaryKey: c.is_primary_key,
+        dataClassification: c.data_classification,
+        dataDomain: c.data_domain || '',
+        attributeDefinition: c.attribute_definition || '',
+        defaultValue: c.default_value || '',
+        action: c.action
+      })));
+      setSelectedColumnId("");
+      setRightPanelMode("properties");
+      setHasUnsavedChanges(false);
+      addToast("success", "Table data refreshed.");
+    } catch (err) {
+      console.error(err);
+      addToast("error", "Failed to refresh table data.");
+    }
   }, [selectedTableId, addToast]);
 
-  // Refresh metadata — reload clusters, schemas, and tables
-  const refreshMetadata = useCallback(() => {
-    // TODO: re-fetch clusters, schemas, businessAreas, and tables from API
-    addToast("success", "Metadata refreshed.");
-  }, [addToast]);
 
   const resetEnvironment = useCallback(() => {
     setSelectedClusterId("");

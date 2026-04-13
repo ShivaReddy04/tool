@@ -18,6 +18,38 @@ const actionBadgeVariant: Record<ColumnAction, "neutral" | "info" | "success" | 
   Drop: "danger",
 };
 
+const DiffViewer: React.FC<{ tableDef: any; cols: any[] }> = ({ tableDef, cols }) => {
+  const fullName = tableDef.tableName;
+
+  return (
+    <div className="bg-[#1e1e1e] text-[#d4d4d4] p-4 rounded-xl font-mono text-sm overflow-x-auto shadow-inner border border-slate-700 font-medium">
+      <div className="mb-2 text-indigo-400">-- DDL Operations for <span className="font-bold">{fullName}</span></div>
+      {cols.map(col => {
+        const notNull = col.isNullable === false ? " NOT NULL" : "";
+        const pk = col.isPrimaryKey ? " PRIMARY KEY" : "";
+        const def = col.defaultValue ? ` DEFAULT ${col.defaultValue}` : "";
+        const fullDef = `${col.columnName} ${col.dataType}${notNull}${pk}${def}`;
+
+        if (col.action === 'Add') {
+          return <div key={col.id} className="bg-emerald-900/40 text-emerald-300 py-1 px-2 -mx-2"><span className="select-none inline-block w-5 font-bold">+</span> ADD COLUMN {fullDef};</div>;
+        } else if (col.action === 'Drop') {
+          return <div key={col.id} className="bg-red-900/40 text-red-300 py-1 px-2 -mx-2"><span className="select-none inline-block w-5 font-bold">-</span> DROP COLUMN {col.columnName};</div>;
+        } else if (col.action === 'Modify') {
+          return (
+            <div key={col.id}>
+              <div className="bg-red-900/40 text-red-300 py-1 px-2 -mx-2"><span className="select-none inline-block w-5 font-bold">-</span> /* Old definition replaced */</div>
+              <div className="bg-emerald-900/40 text-emerald-300 py-1 px-2 -mx-2"><span className="select-none inline-block w-5 font-bold">+</span> ALTER COLUMN {fullDef};</div>
+            </div>
+          );
+        } else {
+          return <div key={col.id} className="text-slate-500 py-1 px-2 -mx-2"><span className="select-none inline-block w-5">&nbsp;</span> {fullDef},</div>;
+        }
+      })}
+    </div>
+  );
+};
+
+
 export const ReviewDrawer: React.FC = () => {
   const { user } = useAuth();
   const {
@@ -167,6 +199,18 @@ export const ReviewDrawer: React.FC = () => {
               })()}
             </div>
           </div>
+
+          {/* Diff Viewer Grid */}
+          <div>
+            <h4 className="text-sm font-semibold text-slate-700 mb-3 flex items-center gap-2">
+              <svg className="w-4 h-4 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
+              </svg>
+              Computed SQL Diff
+            </h4>
+            <DiffViewer tableDef={tableDef} cols={cols} />
+          </div>
+
 
           {/* Columns Grid */}
           <div>

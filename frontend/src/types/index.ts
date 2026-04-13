@@ -129,6 +129,7 @@ export interface Notification {
   timestamp: string;
   isRead: boolean;
   targetRole: "architect" | "developer";
+  submissionId?: string;
   tableDefinition?: TableDefinition;
   columns?: ColumnDefinition[];
 }
