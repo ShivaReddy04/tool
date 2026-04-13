@@ -29,6 +29,7 @@ export const ColumnDataGrid: React.FC = () => {
     hasUnsavedChanges,
     submissionStatus,
     saveChanges,
+    dryRunValidation,
     submitForReview,
   } = useDashboard();
 
@@ -66,6 +67,14 @@ export const ColumnDataGrid: React.FC = () => {
           )}
           <Button variant="secondary" size="sm" onClick={saveChanges} disabled={!hasUnsavedChanges}>
             Save
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={dryRunValidation}
+            disabled={submissionStatus === "submitted"}
+          >
+            Dry Run Validation
           </Button>
           <Button
             variant="primary"

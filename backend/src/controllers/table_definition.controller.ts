@@ -1,6 +1,8 @@
 import { Request, Response } from 'express';
 import { createOrUpdateTableDefinition, getTableDefinitionDetails, getAllTableDefinitions } from '../models/table_definition.model';
 import { bulkUpsertColumnDefinitions, getColumnDefinitionsByTableId } from '../models/column_definition.model';
+import { getClusterConnectionConfig } from '../models/cluster.model';
+import { getConnector } from '../services/connector';
 
 export const saveTableDefinition = async (req: Request, res: Response): Promise<void> => {
     try {
@@ -54,5 +56,34 @@ export const listTableDefinitions = async (req: Request, res: Response): Promise
     } catch (err) {
         console.error('List table definitions error:', err);
         res.status(500).json({ error: 'Internal server error' });
+    }
+};
+
+export const dryRunTableDefinition = async (req: Request, res: Response): Promise<void> => {
+    try {
+        const { table, columns } = req.body;
+        if (!table || !table.connection_id || !table.table_name) {
+            res.status(400).json({ error: 'Required table definition parameters missing' });
+            return;
+        }
+
+        const connInfo = await getClusterConnectionConfig(table.connection_id);
+        if (!connInfo) {
+            res.status(404).json({ error: 'Connection target not found' });
+            return;
+        }
+
+        const connector = getConnector(connInfo.cluster.db_type);
+
+        const colsDDL = columns.map((c: any) => `${c.column_name} ${c.data_type} ${c.is_nullable ? 'NULL' : 'NOT NULL'}`).join(', ');
+        const schemaPart = table.schema_name ? `${table.schema_name}.` : '';
+        const ddl = `CREATE TABLE ${schemaPart}${table.table_name} (${colsDDL})`;
+
+        const success = await connector.dryRunDDL(connInfo.config, ddl);
+
+        res.status(200).json({ success, message: "Dry run passed successfully. SQL execution would not fail." });
+    } catch (err: any) {
+        // We log intentionally formatted errors for the user
+        res.status(400).json({ error: 'Database Dry Run Failed', details: err.message || err });
     }
 };

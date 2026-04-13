@@ -61,6 +61,7 @@ interface DashboardContextType {
   setHasUnsavedChanges: (v: boolean) => void;
   submissionStatus: SubmissionStatus;
   saveChanges: () => void;
+  dryRunValidation: () => Promise<void>;
   submitForReview: (submittedByName: string) => void;
 
   // Review (Architect)
@@ -240,6 +241,33 @@ export const DashboardProvider: React.FC<{ children: React.ReactNode }> = ({
       addToast("error", "Failed to save changes.");
     }
   }, [tableDefinition, columns, selectedClusterId, selectedSchemaId, schemas, selectedBusinessAreaId, submissionStatus, addToast]);
+
+  const dryRunValidation = useCallback(async () => {
+    if (!tableDefinition) return;
+    try {
+      // Map to db format exactly like save changes
+      const dbTableDef = {
+        connection_id: selectedClusterId,
+        database_name: 'default_db',
+        schema_name: selectedSchemaId || 'public',
+        table_name: tableDefinition.tableName,
+      };
+
+      const dbColumns = columns.map(c => ({
+        column_name: c.columnName,
+        data_type: c.dataType,
+        is_nullable: c.isNullable,
+        is_primary_key: c.isPrimaryKey,
+      }));
+
+      const res = await api.post('/table-definitions/dry-run', { table: dbTableDef, columns: dbColumns });
+
+      addToast("success", res.data.message);
+    } catch (err: any) {
+      console.error(err);
+      addToast("error", err.response?.data?.details || "Failed to validate SQL structure against target connection.");
+    }
+  }, [tableDefinition, columns, selectedClusterId, selectedSchemaId, addToast]);
 
   const submitForReview = useCallback(
     async (submittedByName: string) => {
@@ -623,6 +651,7 @@ export const DashboardProvider: React.FC<{ children: React.ReactNode }> = ({
         setHasUnsavedChanges,
         submissionStatus,
         saveChanges,
+        dryRunValidation,
         submitForReview,
         reviewingNotification,
         setReviewingNotification,

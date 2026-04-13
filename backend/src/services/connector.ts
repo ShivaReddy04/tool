@@ -107,6 +107,23 @@ async function pgExecuteDDL(config: ConnectionConfig, query: string): Promise<vo
   }
 }
 
+async function pgDryRunDDL(config: ConnectionConfig, query: string): Promise<boolean> {
+  const pool = await pgConnect(config);
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query(query);
+    await client.query('ROLLBACK');
+    return true;
+  } catch (err) {
+    if (client) await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    if (client) client.release();
+    await pool.end();
+  }
+}
+
 // ── MySQL ────────────────────────────────────────────────────
 async function mysqlConnect(config: ConnectionConfig) {
   return mysql.createConnection({
@@ -192,6 +209,21 @@ async function mysqlExecuteDDL(config: ConnectionConfig, query: string): Promise
   const conn = await mysqlConnect(config);
   try {
     await conn.query(query);
+  } finally {
+    await conn.end();
+  }
+}
+
+async function mysqlDryRunDDL(config: ConnectionConfig, query: string): Promise<boolean> {
+  const conn = await mysqlConnect(config);
+  try {
+    await conn.query('START TRANSACTION');
+    await conn.query(query);
+    await conn.query('ROLLBACK');
+    return true;
+  } catch (err) {
+    await conn.query('ROLLBACK');
+    throw err;
   } finally {
     await conn.end();
   }
@@ -289,6 +321,25 @@ async function mssqlExecuteDDL(config: ConnectionConfig, query: string): Promise
   }
 }
 
+async function mssqlDryRunDDL(config: ConnectionConfig, query: string): Promise<boolean> {
+  const pool = await mssqlConnect(config);
+  try {
+    const transaction = new sql.Transaction(pool);
+    await transaction.begin();
+    try {
+      const request = new sql.Request(transaction);
+      await request.query(query);
+      await transaction.rollback();
+      return true;
+    } catch (err) {
+      await transaction.rollback();
+      throw err;
+    }
+  } finally {
+    await pool.close();
+  }
+}
+
 // ── Factory ──────────────────────────────────────────────────
 type DbType = 'postgresql' | 'mysql' | 'mssql' | 'redshift';
 
@@ -299,11 +350,12 @@ const connectors: Record<DbType, {
   getTables: (c: ConnectionConfig, schema: string) => Promise<TableInfo[]>;
   getColumns: (c: ConnectionConfig, schema: string, table: string) => Promise<ColumnInfo[]>;
   executeDDL: (c: ConnectionConfig, query: string) => Promise<void>;
+  dryRunDDL: (c: ConnectionConfig, query: string) => Promise<boolean>;
 }> = {
-  postgresql: { test: pgTest, getDatabases: pgGetDatabases, getSchemas: pgGetSchemas, getTables: pgGetTables, getColumns: pgGetColumns, executeDDL: pgExecuteDDL },
-  redshift: { test: pgTest, getDatabases: pgGetDatabases, getSchemas: pgGetSchemas, getTables: pgGetTables, getColumns: pgGetColumns, executeDDL: pgExecuteDDL },
-  mysql: { test: mysqlTest, getDatabases: mysqlGetDatabases, getSchemas: mysqlGetSchemas, getTables: mysqlGetTables, getColumns: mysqlGetColumns, executeDDL: mysqlExecuteDDL },
-  mssql: { test: mssqlTest, getDatabases: mssqlGetDatabases, getSchemas: mssqlGetSchemas, getTables: mssqlGetTables, getColumns: mssqlGetColumns, executeDDL: mssqlExecuteDDL },
+  postgresql: { test: pgTest, getDatabases: pgGetDatabases, getSchemas: pgGetSchemas, getTables: pgGetTables, getColumns: pgGetColumns, executeDDL: pgExecuteDDL, dryRunDDL: pgDryRunDDL },
+  redshift: { test: pgTest, getDatabases: pgGetDatabases, getSchemas: pgGetSchemas, getTables: pgGetTables, getColumns: pgGetColumns, executeDDL: pgExecuteDDL, dryRunDDL: pgDryRunDDL },
+  mysql: { test: mysqlTest, getDatabases: mysqlGetDatabases, getSchemas: mysqlGetSchemas, getTables: mysqlGetTables, getColumns: mysqlGetColumns, executeDDL: mysqlExecuteDDL, dryRunDDL: mysqlDryRunDDL },
+  mssql: { test: mssqlTest, getDatabases: mssqlGetDatabases, getSchemas: mssqlGetSchemas, getTables: mssqlGetTables, getColumns: mssqlGetColumns, executeDDL: mssqlExecuteDDL, dryRunDDL: mssqlDryRunDDL },
 };
 
 export function getConnector(dbType: DbType) {
