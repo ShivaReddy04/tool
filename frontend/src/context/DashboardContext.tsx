@@ -203,7 +203,7 @@ export const DashboardProvider: React.FC<{ children: React.ReactNode }> = ({
         id: tableDefinition.id?.startsWith('tbl-new') ? undefined : tableDefinition.id,
         connection_id: selectedClusterId,
         database_name: 'default_db',
-        schema_name: schemas.find(s => s.id === selectedSchemaId)?.name || 'public',
+        schema_name: selectedSchemaId || 'public',
         table_name: tableDefinition.tableName,
         entity_logical_name: tableDefinition.entityLogicalName,
         distribution_style: tableDefinition.distributionStyle,
@@ -417,18 +417,18 @@ export const DashboardProvider: React.FC<{ children: React.ReactNode }> = ({
 
   // Load tables when a schema is selected
   useEffect(() => {
-    if (isInitialMount.current) return; // Skip on mount — persisted state is already loaded
-    if (!selectedSchemaId) {
+    if (isInitialMount.current) return;
+    if (!selectedSchemaId || !selectedClusterId) {
       setTables([]);
       setSelectedTableId("");
       setTableDefinition(null);
       setColumns([]);
       return;
     }
-    const schemaObj = schemas.find(s => s.id === selectedSchemaId);
-    if (!schemaObj || !selectedClusterId) return;
 
-    api.get(`/table-definitions?connectionId=${selectedClusterId}&schemaName=${schemaObj.name}`)
+    // Because EnvironmentPanel sets selectedSchemaId directly to the schema name (e.g. "public")
+    // we query using that name directly.
+    api.get(`/table-definitions?connectionId=${selectedClusterId}&schemaName=${selectedSchemaId}`)
       .then(res => {
         const mappedSummary = res.data.map((t: any) => ({
           id: t.id,
@@ -448,7 +448,7 @@ export const DashboardProvider: React.FC<{ children: React.ReactNode }> = ({
     setSelectedTableId("");
     setTableDefinition(null);
     setColumns([]);
-  }, [selectedSchemaId, selectedClusterId, schemas, addToast]);
+  }, [selectedSchemaId, selectedClusterId, addToast]);
 
   // Load table definition & columns when a table is selected
   useEffect(() => {

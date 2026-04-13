@@ -27,11 +27,18 @@ export const EnvironmentPanel: React.FC = () => {
     setTableDefinition,
     setColumns,
     setCurrentStep,
+    setSelectedClusterId,
+    setSelectedSchemaId,
   } = useDashboard();
 
   // Connection state
   const [connections, setConnections] = useState<DbConnection[]>([]);
   const [selectedConnectionId, setSelectedConnectionId] = useState("");
+
+  // Update Context when selection changes
+  useEffect(() => {
+    setSelectedClusterId(selectedConnectionId);
+  }, [selectedConnectionId, setSelectedClusterId]);
 
   // Cluster (database) state
   const [databases, setDatabases] = useState<string[]>([]);
@@ -42,6 +49,10 @@ export const EnvironmentPanel: React.FC = () => {
   const [schemas, setSchemas] = useState<string[]>([]);
   const [selectedSchema, setSelectedSchema] = useState("");
   const [loadingSchemas, setLoadingSchemas] = useState(false);
+
+  useEffect(() => {
+    setSelectedSchemaId(selectedSchema);
+  }, [selectedSchema, setSelectedSchemaId]);
 
   // Tables state
   const [loadingTables, setLoadingTables] = useState(false);
