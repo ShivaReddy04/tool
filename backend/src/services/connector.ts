@@ -98,6 +98,15 @@ async function pgTest(config: ConnectionConfig): Promise<boolean> {
   }
 }
 
+async function pgExecuteDDL(config: ConnectionConfig, query: string): Promise<void> {
+  const pool = await pgConnect(config);
+  try {
+    await pool.query(query);
+  } finally {
+    await pool.end();
+  }
+}
+
 // ── MySQL ────────────────────────────────────────────────────
 async function mysqlConnect(config: ConnectionConfig) {
   return mysql.createConnection({
@@ -174,6 +183,15 @@ async function mysqlTest(config: ConnectionConfig): Promise<boolean> {
   try {
     await conn.query('SELECT 1');
     return true;
+  } finally {
+    await conn.end();
+  }
+}
+
+async function mysqlExecuteDDL(config: ConnectionConfig, query: string): Promise<void> {
+  const conn = await mysqlConnect(config);
+  try {
+    await conn.query(query);
   } finally {
     await conn.end();
   }
@@ -262,6 +280,15 @@ async function mssqlTest(config: ConnectionConfig): Promise<boolean> {
   }
 }
 
+async function mssqlExecuteDDL(config: ConnectionConfig, query: string): Promise<void> {
+  const pool = await mssqlConnect(config);
+  try {
+    await pool.query(query);
+  } finally {
+    await pool.close();
+  }
+}
+
 // ── Factory ──────────────────────────────────────────────────
 type DbType = 'postgresql' | 'mysql' | 'mssql' | 'redshift';
 
@@ -271,11 +298,12 @@ const connectors: Record<DbType, {
   getSchemas: (c: ConnectionConfig) => Promise<SchemaInfo[]>;
   getTables: (c: ConnectionConfig, schema: string) => Promise<TableInfo[]>;
   getColumns: (c: ConnectionConfig, schema: string, table: string) => Promise<ColumnInfo[]>;
+  executeDDL: (c: ConnectionConfig, query: string) => Promise<void>;
 }> = {
-  postgresql: { test: pgTest, getDatabases: pgGetDatabases, getSchemas: pgGetSchemas, getTables: pgGetTables, getColumns: pgGetColumns },
-  redshift:   { test: pgTest, getDatabases: pgGetDatabases, getSchemas: pgGetSchemas, getTables: pgGetTables, getColumns: pgGetColumns },
-  mysql:      { test: mysqlTest, getDatabases: mysqlGetDatabases, getSchemas: mysqlGetSchemas, getTables: mysqlGetTables, getColumns: mysqlGetColumns },
-  mssql:      { test: mssqlTest, getDatabases: mssqlGetDatabases, getSchemas: mssqlGetSchemas, getTables: mssqlGetTables, getColumns: mssqlGetColumns },
+  postgresql: { test: pgTest, getDatabases: pgGetDatabases, getSchemas: pgGetSchemas, getTables: pgGetTables, getColumns: pgGetColumns, executeDDL: pgExecuteDDL },
+  redshift: { test: pgTest, getDatabases: pgGetDatabases, getSchemas: pgGetSchemas, getTables: pgGetTables, getColumns: pgGetColumns, executeDDL: pgExecuteDDL },
+  mysql: { test: mysqlTest, getDatabases: mysqlGetDatabases, getSchemas: mysqlGetSchemas, getTables: mysqlGetTables, getColumns: mysqlGetColumns, executeDDL: mysqlExecuteDDL },
+  mssql: { test: mssqlTest, getDatabases: mssqlGetDatabases, getSchemas: mssqlGetSchemas, getTables: mssqlGetTables, getColumns: mssqlGetColumns, executeDDL: mssqlExecuteDDL },
 };
 
 export function getConnector(dbType: DbType) {
