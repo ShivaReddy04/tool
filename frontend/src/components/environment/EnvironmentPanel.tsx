@@ -8,7 +8,7 @@ import {
   fetchSchemas,
   fetchTables,
 } from "../../api/connections";
-import type { DbConnection } from "../../types";
+import type { DbConnection, TableSummary } from "../../types";
 
 const DB_TYPE_LABELS: Record<string, string> = {
   postgresql: "PostgreSQL",
@@ -156,14 +156,25 @@ export const EnvironmentPanel: React.FC = () => {
       try {
         const data = await fetchTables(selectedConnectionId, selectedSchema, selectedDatabase);
         setTableCount(data.length);
-        setTables(data.map((t) => ({
+        const physicalTables = data.map((t) => ({
           id: `${selectedConnectionId}::${selectedDatabase}::${selectedSchema}::${t.table_name}`,
           name: t.table_name,
           schemaId: selectedSchema,
           columnCount: 0,
           createdAt: "",
           updatedAt: "",
-        })));
+        }));
+
+        setTables((prev: TableSummary[]) => {
+          const physicalNames = new Set(physicalTables.map((m) => m.name));
+          const merged = [...physicalTables];
+          for (const p of prev) {
+            if (!physicalNames.has(p.name)) {
+              merged.push(p);
+            }
+          }
+          return merged;
+        });
         setCurrentStep(2);
       } catch {
         setTables([]);

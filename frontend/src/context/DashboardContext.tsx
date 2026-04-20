@@ -32,7 +32,7 @@ interface DashboardContextType {
   tables: TableSummary[];
   selectedTableId: string;
   tableDefinition: TableDefinition | null;
-  setTables: (tables: TableSummary[]) => void;
+  setTables: React.Dispatch<React.SetStateAction<TableSummary[]>>;
   setSelectedTableId: (id: string) => void;
   setTableDefinition: (def: TableDefinition | null) => void;
 
@@ -468,9 +468,13 @@ export const DashboardProvider: React.FC<{ children: React.ReactNode }> = ({
         }));
         // Merge DART metadata tables with the physical target database tables (which exist in prev state)
         setTables(prev => {
+          // Identify existing physical tables currently in state
+          const physicalOnly = prev.filter(p => p.id.includes('::'));
+
           const merged = [...mappedSummary];
           const dartNames = new Set(mappedSummary.map((m: any) => m.name));
-          for (const p of prev) {
+
+          for (const p of physicalOnly) {
             if (!dartNames.has(p.name)) {
               merged.push(p);
             }
@@ -480,7 +484,7 @@ export const DashboardProvider: React.FC<{ children: React.ReactNode }> = ({
       })
       .catch(err => {
         console.error(err);
-        addToast("error", "Failed to load tables.");
+        addToast("error", "Failed to load DART tables.");
       });
 
     setSelectedTableId("");
@@ -495,34 +499,76 @@ export const DashboardProvider: React.FC<{ children: React.ReactNode }> = ({
       return; // Skip on mount — persisted state is already loaded
     }
     if (selectedTableId) {
-      api.get(`/table-definitions/${selectedTableId}`)
-        .then(res => {
-          setTableDefinition({
-            id: res.data.table.id,
-            tableName: res.data.table.table_name,
-            entityLogicalName: res.data.table.entity_logical_name || '',
-            distributionStyle: res.data.table.distribution_style || 'AUTO',
-            keys: res.data.table.keys || '',
-            verticalName: res.data.table.vertical_name || '',
-            columns: res.data.columns
+      if (selectedTableId.includes('::')) {
+        // This is a physical table from the database
+        const [connId, db, schema, tableName] = selectedTableId.split('::');
+
+        api.get(`/clusters/${connId}/columns`, { params: { schema, table: tableName, database: db } })
+          .then(res => {
+            const cols = res.data;
+            setTableDefinition({
+              id: selectedTableId,
+              tableName: tableName,
+              entityLogicalName: '',
+              distributionStyle: 'AUTO',
+              keys: '',
+              verticalName: '',
+              columns: []
+            });
+            setColumns(cols.map((c: any) => ({
+              id: `col-${c.column_name}`,
+              columnName: c.column_name,
+              dataType: c.data_type,
+              isNullable: c.is_nullable === 'YES' || c.is_nullable === true,
+              isPrimaryKey: false, // We could infer from another endpoint, defaults to false
+              dataClassification: '',
+              dataDomain: '',
+              attributeDefinition: '',
+              defaultValue: c.column_default || '',
+              action: 'none'
+            })));
+            setCurrentStep(3);
+            setSubmissionStatus("draft");
+            setHasUnsavedChanges(false);
+          })
+          .catch(err => {
+            console.error("Failed to load physical columns:", err);
+            addToast("error", "Failed to fetch table columns from database.");
           });
-          setColumns(res.data.columns.map((c: any) => ({
-            id: c.id,
-            columnName: c.column_name,
-            dataType: c.data_type,
-            isNullable: c.is_nullable,
-            isPrimaryKey: c.is_primary_key,
-            dataClassification: c.data_classification,
-            dataDomain: c.data_domain || '',
-            attributeDefinition: c.attribute_definition || '',
-            defaultValue: c.default_value || '',
-            action: c.action
-          })));
-          setCurrentStep(3);
-          setSubmissionStatus(res.data.table.status);
-          setHasUnsavedChanges(false);
-        })
-        .catch(console.error);
+      } else {
+        // This is a DART managed table definition
+        api.get(`/table-definitions/${selectedTableId}`)
+          .then(res => {
+            setTableDefinition({
+              id: res.data.table.id,
+              tableName: res.data.table.table_name,
+              entityLogicalName: res.data.table.entity_logical_name || '',
+              distributionStyle: res.data.table.distribution_style || 'AUTO',
+              keys: res.data.table.keys || '',
+              verticalName: res.data.table.vertical_name || '',
+              columns: res.data.columns
+            });
+            setColumns(res.data.columns.map((c: any) => ({
+              id: c.id,
+              columnName: c.column_name,
+              dataType: c.data_type,
+              isNullable: c.is_nullable,
+              isPrimaryKey: c.is_primary_key,
+              dataClassification: c.data_classification,
+              dataDomain: c.data_domain || '',
+              attributeDefinition: c.attribute_definition || '',
+              defaultValue: c.default_value || '',
+              action: c.action
+            })));
+            setCurrentStep(3);
+            setSubmissionStatus(res.data.table.status);
+            setHasUnsavedChanges(false);
+          })
+          .catch(err => {
+            console.error(err);
+            addToast("error", "Failed to load table definition.");
+          });
+      }
     } else {
       setTableDefinition(null);
       setColumns([]);
