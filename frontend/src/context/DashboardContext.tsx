@@ -201,7 +201,7 @@ export const DashboardProvider: React.FC<{ children: React.ReactNode }> = ({
     try {
       // Map to db format
       const dbTableDef = {
-        id: tableDefinition.id?.startsWith('tbl-new') ? undefined : tableDefinition.id,
+        id: tableDefinition.id?.startsWith('tbl-new') || tableDefinition.id?.includes('::') ? undefined : tableDefinition.id,
         connection_id: selectedClusterId,
         database_name: 'default_db',
         schema_name: selectedSchemaId || 'public',
@@ -215,7 +215,7 @@ export const DashboardProvider: React.FC<{ children: React.ReactNode }> = ({
       };
 
       const dbColumns = columns.map(c => ({
-        id: c.id,
+        id: c.id?.startsWith('col-') || c.id?.startsWith('col_new') ? undefined : c.id,
         column_name: c.columnName,
         data_type: c.dataType,
         is_nullable: c.isNullable,
@@ -230,8 +230,23 @@ export const DashboardProvider: React.FC<{ children: React.ReactNode }> = ({
 
       const res = await api.post('/table-definitions', { table: dbTableDef, columns: dbColumns });
 
-      if (!tableDefinition.id || tableDefinition.id.startsWith('tbl-new')) {
+      if (!tableDefinition.id || tableDefinition.id.startsWith('tbl-new') || tableDefinition.id.includes('::')) {
         setTableDefinition(prev => prev ? { ...prev, id: res.data.table.id } : null);
+      }
+
+      if (res.data.columns && res.data.columns.length > 0) {
+        setColumns(res.data.columns.map((c: any) => ({
+          id: c.id,
+          columnName: c.column_name,
+          dataType: c.data_type,
+          isNullable: c.is_nullable,
+          isPrimaryKey: c.is_primary_key,
+          dataClassification: c.data_classification,
+          dataDomain: c.data_domain || '',
+          attributeDefinition: c.attribute_definition || '',
+          defaultValue: c.default_value || '',
+          action: c.action
+        })));
       }
 
       setHasUnsavedChanges(false);
