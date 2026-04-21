@@ -6,6 +6,7 @@ import {
   TablePropertiesPanel,
   CreateTableDrawer,
   DeleteTableModal,
+  TableDataGrid,
 } from "../components/table";
 import { ColumnDataGrid, ColumnDetailPanel } from "../components/columns";
 
@@ -16,6 +17,7 @@ import { useDashboard } from "../context/DashboardContext";
 const CenterPanel: React.FC = () => {
   const { selectedClusterId, selectedSchemaId, selectedTableId, columns } =
     useDashboard();
+  const [activeTab, setActiveTab] = React.useState<"schema" | "data">("schema");
 
   if (!selectedClusterId || !selectedSchemaId) {
     return (
@@ -48,7 +50,29 @@ const CenterPanel: React.FC = () => {
       </Card>
 
       {selectedTableId && columns.length > 0 ? (
-        <ColumnDataGrid />
+        <div className="space-y-4">
+          <div className="flex space-x-1 bg-slate-100 p-1 rounded-lg w-max">
+            <button
+              onClick={() => setActiveTab("schema")}
+              className={`px-4 py-1.5 text-sm font-medium rounded-md transition-colors ${activeTab === "schema"
+                  ? "bg-white text-indigo-600 shadow-sm"
+                  : "text-slate-600 hover:text-slate-900"
+                }`}
+            >
+              Schema Structure
+            </button>
+            <button
+              onClick={() => setActiveTab("data")}
+              className={`px-4 py-1.5 text-sm font-medium rounded-md transition-colors ${activeTab === "data"
+                  ? "bg-white text-indigo-600 shadow-sm"
+                  : "text-slate-600 hover:text-slate-900"
+                }`}
+            >
+              Data Preview
+            </button>
+          </div>
+          {activeTab === "schema" ? <ColumnDataGrid /> : <TableDataGrid />}
+        </div>
       ) : selectedTableId ? (
         <Card>
           <EmptyState

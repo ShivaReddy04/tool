@@ -13,6 +13,8 @@ import {
   getSchemas,
   getTables,
   getColumns,
+  getTableData,
+  updateTableData,
 } from '../controllers/cluster.controller';
 
 const router = Router();
@@ -36,5 +38,7 @@ router.get('/:id/databases', getDatabases);
 router.get('/:id/schemas', getSchemas);
 router.get('/:id/tables', getTables);
 router.get('/:id/columns', getColumns);
+router.get('/:id/data', getTableData);
+router.post('/:id/data', updateTableData);
 
 export default router;

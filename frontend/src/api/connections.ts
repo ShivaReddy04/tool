@@ -55,6 +55,15 @@ export const fetchColumns = async (connectionId: string, schema: string, table: 
   return data;
 };
 
+export const fetchTableData = async (connectionId: string, schema: string, table: string, database?: string): Promise<any[]> => {
+  const { data } = await api.get(`/clusters/${connectionId}/data`, { params: { schema, table, ...(database ? { database } : {}) } });
+  return data;
+};
+
+export const updateTableData = async (connectionId: string, schema: string, table: string, originalRow: any, updatedRow: any, database?: string): Promise<void> => {
+  await api.post(`/clusters/${connectionId}/data`, { originalRow, updatedRow }, { params: { schema, table, ...(database ? { database } : {}) } });
+};
+
 export const fetchDataTypes = async (connectionId: string): Promise<string[]> => {
   const { data } = await api.get(`/clusters/${connectionId}/data-types`);
   return data;

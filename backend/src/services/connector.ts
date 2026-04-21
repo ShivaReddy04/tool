@@ -107,6 +107,26 @@ async function pgExecuteDDL(config: ConnectionConfig, query: string): Promise<vo
   }
 }
 
+async function pgGetTableData(config: ConnectionConfig, schema: string, table: string): Promise<any[]> {
+  const pool = await pgConnect(config);
+  try {
+    const result = await pool.query(`SELECT * FROM "${schema}"."${table}" LIMIT 100`);
+    return result.rows;
+  } finally {
+    await pool.end();
+  }
+}
+
+async function pgRunQuery(config: ConnectionConfig, queryStr: string): Promise<any> {
+  const pool = await pgConnect(config);
+  try {
+    const result = await pool.query(queryStr);
+    return result.rows || [];
+  } finally {
+    await pool.end();
+  }
+}
+
 async function pgDryRunDDL(config: ConnectionConfig, query: string): Promise<boolean> {
   const pool = await pgConnect(config);
   const client = await pool.connect();
@@ -209,6 +229,26 @@ async function mysqlExecuteDDL(config: ConnectionConfig, query: string): Promise
   const conn = await mysqlConnect(config);
   try {
     await conn.query(query);
+  } finally {
+    await conn.end();
+  }
+}
+
+async function mysqlGetTableData(config: ConnectionConfig, schema: string, table: string): Promise<any[]> {
+  const conn = await mysqlConnect(config);
+  try {
+    const [rows] = await conn.query(`SELECT * FROM \`${schema}\`.\`${table}\` LIMIT 100`);
+    return rows as any[];
+  } finally {
+    await conn.end();
+  }
+}
+
+async function mysqlRunQuery(config: ConnectionConfig, queryStr: string): Promise<any> {
+  const conn = await mysqlConnect(config);
+  try {
+    const [rows] = await conn.query(queryStr);
+    return rows;
   } finally {
     await conn.end();
   }
@@ -321,6 +361,26 @@ async function mssqlExecuteDDL(config: ConnectionConfig, query: string): Promise
   }
 }
 
+async function mssqlGetTableData(config: ConnectionConfig, schema: string, table: string): Promise<any[]> {
+  const pool = await mssqlConnect(config);
+  try {
+    const result = await pool.request().query(`SELECT TOP 100 * FROM [${schema}].[${table}]`);
+    return result.recordset;
+  } finally {
+    await pool.close();
+  }
+}
+
+async function mssqlRunQuery(config: ConnectionConfig, queryStr: string): Promise<any> {
+  const pool = await mssqlConnect(config);
+  try {
+    const result = await pool.query(queryStr);
+    return result.recordset || [];
+  } finally {
+    await pool.close();
+  }
+}
+
 async function mssqlDryRunDDL(config: ConnectionConfig, query: string): Promise<boolean> {
   const pool = await mssqlConnect(config);
   try {
@@ -349,13 +409,15 @@ const connectors: Record<DbType, {
   getSchemas: (c: ConnectionConfig) => Promise<SchemaInfo[]>;
   getTables: (c: ConnectionConfig, schema: string) => Promise<TableInfo[]>;
   getColumns: (c: ConnectionConfig, schema: string, table: string) => Promise<ColumnInfo[]>;
+  getTableData: (c: ConnectionConfig, schema: string, table: string) => Promise<any[]>;
+  runQuery: (c: ConnectionConfig, queryStr: string) => Promise<any>;
   executeDDL: (c: ConnectionConfig, query: string) => Promise<void>;
   dryRunDDL: (c: ConnectionConfig, query: string) => Promise<boolean>;
 }> = {
-  postgresql: { test: pgTest, getDatabases: pgGetDatabases, getSchemas: pgGetSchemas, getTables: pgGetTables, getColumns: pgGetColumns, executeDDL: pgExecuteDDL, dryRunDDL: pgDryRunDDL },
-  redshift: { test: pgTest, getDatabases: pgGetDatabases, getSchemas: pgGetSchemas, getTables: pgGetTables, getColumns: pgGetColumns, executeDDL: pgExecuteDDL, dryRunDDL: pgDryRunDDL },
-  mysql: { test: mysqlTest, getDatabases: mysqlGetDatabases, getSchemas: mysqlGetSchemas, getTables: mysqlGetTables, getColumns: mysqlGetColumns, executeDDL: mysqlExecuteDDL, dryRunDDL: mysqlDryRunDDL },
-  mssql: { test: mssqlTest, getDatabases: mssqlGetDatabases, getSchemas: mssqlGetSchemas, getTables: mssqlGetTables, getColumns: mssqlGetColumns, executeDDL: mssqlExecuteDDL, dryRunDDL: mssqlDryRunDDL },
+  postgresql: { test: pgTest, getDatabases: pgGetDatabases, getSchemas: pgGetSchemas, getTables: pgGetTables, getColumns: pgGetColumns, getTableData: pgGetTableData, runQuery: pgRunQuery, executeDDL: pgExecuteDDL, dryRunDDL: pgDryRunDDL },
+  redshift: { test: pgTest, getDatabases: pgGetDatabases, getSchemas: pgGetSchemas, getTables: pgGetTables, getColumns: pgGetColumns, getTableData: pgGetTableData, runQuery: pgRunQuery, executeDDL: pgExecuteDDL, dryRunDDL: pgDryRunDDL },
+  mysql: { test: mysqlTest, getDatabases: mysqlGetDatabases, getSchemas: mysqlGetSchemas, getTables: mysqlGetTables, getColumns: mysqlGetColumns, getTableData: mysqlGetTableData, runQuery: mysqlRunQuery, executeDDL: mysqlExecuteDDL, dryRunDDL: mysqlDryRunDDL },
+  mssql: { test: mssqlTest, getDatabases: mssqlGetDatabases, getSchemas: mssqlGetSchemas, getTables: mssqlGetTables, getColumns: mssqlGetColumns, getTableData: mssqlGetTableData, runQuery: mssqlRunQuery, executeDDL: mssqlExecuteDDL, dryRunDDL: mssqlDryRunDDL },
 };
 
 export function getConnector(dbType: DbType) {

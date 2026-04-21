@@ -277,3 +277,87 @@ export const getColumns = async (req: Request, res: Response): Promise<void> => 
     res.status(500).json({ error: err.message || 'Failed to fetch columns' });
   }
 };
+
+// GET /api/clusters/:id/data?schema=&table=&database=
+export const getTableData = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const connConfig = await getClusterConnectionConfig(req.params.id as string);
+    if (!connConfig) {
+      res.status(404).json({ error: 'Cluster not found' });
+      return;
+    }
+
+    const schema = String(req.query.schema || '');
+    const table = String(req.query.table || '');
+    if (!schema || !table) {
+      res.status(400).json({ error: 'schema and table query parameters are required' });
+      return;
+    }
+
+    const database = String(req.query.database || connConfig.config.database);
+    const connector = getConnector(connConfig.cluster.db_type);
+    const data = await connector.getTableData({ ...connConfig.config, database }, schema, table);
+    res.json(data);
+  } catch (err: any) {
+    console.error('Get table data error:', err);
+    res.status(500).json({ error: err.message || 'Failed to fetch table data' });
+  }
+};
+
+// POST /api/clusters/:id/data?schema=&table=&database=
+export const updateTableData = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const connConfig = await getClusterConnectionConfig(req.params.id as string);
+    if (!connConfig) {
+      res.status(404).json({ error: 'Cluster not found' });
+      return;
+    }
+
+    const { schema, table } = req.query as { schema: string, table: string };
+    if (!schema || !table) {
+      res.status(400).json({ error: 'schema and table query parameters are required' });
+      return;
+    }
+
+    const { originalRow, updatedRow } = req.body;
+    if (!originalRow || !updatedRow) {
+      res.status(400).json({ error: 'originalRow and updatedRow body parameters are required' });
+      return;
+    }
+
+    const database = String(req.query.database || connConfig.config.database);
+    const connector = getConnector(connConfig.cluster.db_type);
+
+    const dbType = connConfig.cluster.db_type;
+
+    // Build dynamic UPDATE query based on the db type
+    const setKeys = Object.keys(updatedRow).filter(k => updatedRow[k] !== originalRow[k]);
+    if (setKeys.length === 0) {
+      res.json({ success: true, message: "No changes needed" });
+      return;
+    }
+
+    let queryStr = "";
+
+    if (dbType === "postgresql" || dbType === "redshift") {
+      const setClauses = setKeys.map(k => `"${k}" = '${updatedRow[k]}'`).join(", ");
+      const whereClauses = Object.keys(originalRow).map(k => originalRow[k] === null ? `"${k}" IS NULL` : `"${k}" = '${originalRow[k]}'`).join(" AND ");
+      queryStr = `UPDATE "${schema}"."${table}" SET ${setClauses} WHERE ${whereClauses}`;
+    } else if (dbType === "mysql") {
+      const setClauses = setKeys.map(k => `\`${k}\` = '${updatedRow[k]}'`).join(", ");
+      const whereClauses = Object.keys(originalRow).map(k => originalRow[k] === null ? `\`${k}\` IS NULL` : `\`${k}\` = '${originalRow[k]}'`).join(" AND ");
+      queryStr = `UPDATE \`${schema}\`.\`${table}\` SET ${setClauses} WHERE ${whereClauses}`;
+    } else if (dbType === "mssql") {
+      const setClauses = setKeys.map(k => `[${k}] = '${updatedRow[k]}'`).join(", ");
+      const whereClauses = Object.keys(originalRow).map(k => originalRow[k] === null ? `[${k}] IS NULL` : `[${k}] = '${originalRow[k]}'`).join(" AND ");
+      queryStr = `UPDATE [${schema}].[${table}] SET ${setClauses} WHERE ${whereClauses}`;
+    }
+
+    await connector.runQuery({ ...connConfig.config, database }, queryStr);
+
+    res.json({ success: true, message: "Row updated successfully" });
+  } catch (err: any) {
+    console.error('Update table data error:', err);
+    res.status(500).json({ error: err.message || 'Failed to update table data' });
+  }
+};
