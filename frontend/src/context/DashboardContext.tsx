@@ -19,12 +19,14 @@ interface DashboardContextType {
   schemas: Schema[];
   businessAreas: BusinessArea[];
   selectedClusterId: string;
+  selectedDatabaseId: string;
   selectedSchemaId: string;
   selectedBusinessAreaId: string;
   setClusters: (clusters: Cluster[]) => void;
   setSchemas: (schemas: Schema[]) => void;
   setBusinessAreas: (areas: BusinessArea[]) => void;
   setSelectedClusterId: (id: string) => void;
+  setSelectedDatabaseId: (id: string) => void;
   setSelectedSchemaId: (id: string) => void;
   setSelectedBusinessAreaId: (id: string) => void;
 
@@ -119,6 +121,7 @@ export const DashboardProvider: React.FC<{ children: React.ReactNode }> = ({
   const [schemas, setSchemas] = useState<Schema[]>([]);
   const [businessAreas, setBusinessAreas] = useState<BusinessArea[]>([]);
   const [selectedClusterId, setSelectedClusterId] = useState(persisted?.selectedClusterId ?? "");
+  const [selectedDatabaseId, setSelectedDatabaseId] = useState(persisted?.selectedDatabaseId ?? "");
   const [selectedSchemaId, setSelectedSchemaId] = useState(persisted?.selectedSchemaId ?? "");
   const [selectedBusinessAreaId, setSelectedBusinessAreaId] = useState(persisted?.selectedBusinessAreaId ?? "");
 
@@ -155,6 +158,7 @@ export const DashboardProvider: React.FC<{ children: React.ReactNode }> = ({
   useEffect(() => {
     persistState({
       selectedClusterId,
+      selectedDatabaseId,
       selectedSchemaId,
       selectedBusinessAreaId,
       tables,
@@ -166,7 +170,7 @@ export const DashboardProvider: React.FC<{ children: React.ReactNode }> = ({
       submissionStatus,
       notifications,
     });
-  }, [selectedClusterId, selectedSchemaId, selectedBusinessAreaId, tables, selectedTableId, tableDefinition, columns, currentStep, hasUnsavedChanges, submissionStatus, notifications]);
+  }, [selectedClusterId, selectedDatabaseId, selectedSchemaId, selectedBusinessAreaId, tables, selectedTableId, tableDefinition, columns, currentStep, hasUnsavedChanges, submissionStatus, notifications]);
 
   // Toast state
   const [toasts, setToasts] = useState<ToastData[]>([]);
@@ -203,7 +207,7 @@ export const DashboardProvider: React.FC<{ children: React.ReactNode }> = ({
       const dbTableDef = {
         id: tableDefinition.id?.startsWith('tbl-new') || tableDefinition.id?.includes('::') ? undefined : tableDefinition.id,
         connection_id: selectedClusterId,
-        database_name: 'default_db',
+        database_name: selectedDatabaseId || 'default_db',
         schema_name: selectedSchemaId || 'public',
         table_name: tableDefinition.tableName,
         entity_logical_name: tableDefinition.entityLogicalName,
@@ -255,7 +259,7 @@ export const DashboardProvider: React.FC<{ children: React.ReactNode }> = ({
       console.error(err);
       addToast("error", "Failed to save changes.");
     }
-  }, [tableDefinition, columns, selectedClusterId, selectedSchemaId, schemas, selectedBusinessAreaId, submissionStatus, addToast]);
+  }, [tableDefinition, columns, selectedClusterId, selectedDatabaseId, selectedSchemaId, schemas, selectedBusinessAreaId, submissionStatus, addToast]);
 
   const dryRunValidation = useCallback(async () => {
     if (!tableDefinition) return;
@@ -263,7 +267,7 @@ export const DashboardProvider: React.FC<{ children: React.ReactNode }> = ({
       // Map to db format exactly like save changes
       const dbTableDef = {
         connection_id: selectedClusterId,
-        database_name: 'default_db',
+        database_name: selectedDatabaseId || 'default_db',
         schema_name: selectedSchemaId || 'public',
         table_name: tableDefinition.tableName,
       };
@@ -282,7 +286,7 @@ export const DashboardProvider: React.FC<{ children: React.ReactNode }> = ({
       console.error(err);
       addToast("error", err.response?.data?.details || "Failed to validate SQL structure against target connection.");
     }
-  }, [tableDefinition, columns, selectedClusterId, selectedSchemaId, addToast]);
+  }, [tableDefinition, columns, selectedClusterId, selectedDatabaseId, selectedSchemaId, addToast]);
 
   const submitForReview = useCallback(
     async (submittedByName: string) => {
@@ -659,6 +663,7 @@ export const DashboardProvider: React.FC<{ children: React.ReactNode }> = ({
 
   const resetEnvironment = useCallback(() => {
     setSelectedClusterId("");
+    setSelectedDatabaseId("");
     setSelectedSchemaId("");
     setSelectedBusinessAreaId("");
     setSchemas([]);
@@ -688,12 +693,14 @@ export const DashboardProvider: React.FC<{ children: React.ReactNode }> = ({
         schemas,
         businessAreas,
         selectedClusterId,
+        selectedDatabaseId,
         selectedSchemaId,
         selectedBusinessAreaId,
         setClusters,
         setSchemas,
         setBusinessAreas,
         setSelectedClusterId,
+        setSelectedDatabaseId,
         setSelectedSchemaId,
         setSelectedBusinessAreaId,
         tables,

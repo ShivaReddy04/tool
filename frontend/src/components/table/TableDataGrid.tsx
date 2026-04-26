@@ -4,7 +4,7 @@ import { Card, EmptyState, Button } from "../common";
 import { fetchTableData, updateTableData } from "../../api/connections";
 
 export const TableDataGrid: React.FC = () => {
-    const { selectedClusterId, selectedSchemaId, tableDefinition, addToast } = useDashboard();
+    const { selectedClusterId, selectedDatabaseId, selectedSchemaId, tableDefinition, addToast } = useDashboard();
     const [data, setData] = useState<any[]>([]);
     const [loading, setLoading] = useState(false);
     const [editingRowIndex, setEditingRowIndex] = useState<number | null>(null);
@@ -22,7 +22,7 @@ export const TableDataGrid: React.FC = () => {
             setEditingRowIndex(null);
             setEditedRowData(null);
             try {
-                const rows = await fetchTableData(selectedClusterId, selectedSchemaId, tableDefinition.tableName);
+                const rows = await fetchTableData(selectedClusterId, selectedSchemaId, tableDefinition.tableName, selectedDatabaseId);
                 if (isMounted) {
                     setData(rows);
                 }
@@ -71,7 +71,7 @@ export const TableDataGrid: React.FC = () => {
     const handleSaveRow = async (index: number) => {
         if (!selectedClusterId || !selectedSchemaId || !tableDefinition?.tableName) return;
         try {
-            await updateTableData(selectedClusterId, selectedSchemaId, tableDefinition.tableName, data[index], editedRowData);
+            await updateTableData(selectedClusterId, selectedSchemaId, tableDefinition.tableName, data[index], editedRowData, selectedDatabaseId);
 
             const newData = [...data];
             newData[index] = editedRowData;

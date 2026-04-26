@@ -28,6 +28,8 @@ export const EnvironmentPanel: React.FC = () => {
     setColumns,
     setCurrentStep,
     setSelectedClusterId,
+    selectedDatabaseId: selectedDatabase,
+    setSelectedDatabaseId: setSelectedDatabase,
     setSelectedSchemaId,
   } = useDashboard();
 
@@ -42,7 +44,6 @@ export const EnvironmentPanel: React.FC = () => {
 
   // Cluster (database) state
   const [databases, setDatabases] = useState<string[]>([]);
-  const [selectedDatabase, setSelectedDatabase] = useState("");
   const [loadingDatabases, setLoadingDatabases] = useState(false);
 
   // Schema state

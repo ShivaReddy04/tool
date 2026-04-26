@@ -49,7 +49,7 @@ const CenterPanel: React.FC = () => {
         <TableToolbar />
       </Card>
 
-      {selectedTableId && columns.length > 0 ? (
+      {selectedTableId && tableDefinition ? (
         <div className="space-y-4">
           <div className="flex space-x-1 bg-slate-100 p-1 rounded-lg w-max">
             <button
