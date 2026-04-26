@@ -220,7 +220,7 @@ export const getSchemas = async (req: Request, res: Response): Promise<void> => 
     const database = String(req.query.database || connConfig.config.database);
     const connector = getConnector(connConfig.cluster.db_type);
     const schemas = await connector.getSchemas({ ...connConfig.config, database });
-    res.json(schemas.map((s) => s.schema_name));
+    res.json(schemas.map((s: any) => s.schema_name));
   } catch (err: any) {
     console.error('Get schemas error:', err);
     res.status(500).json({ error: err.message || 'Failed to fetch schemas' });

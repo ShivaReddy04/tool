@@ -29,17 +29,15 @@ interface ColumnInfo {
 
 // ── PostgreSQL / Redshift ─────────────────
 async function pgConnect(config: ConnectionConfig) {
-  const pool = process.env.DATABASE_URL
-    ? new PgPool({
-      connectionString: process.env.DATABASE_URL,
-      max: 2,
-      connectionTimeoutMillis: 5000,
-    })
-    : new PgPool({
-      ...config,
-      max: 2,
-      connectionTimeoutMillis: 5000,
-    });
+  const pool = new PgPool({
+    host: config.host,
+    port: config.port,
+    database: config.database,
+    user: config.user,
+    password: config.password,
+    max: 2,
+    connectionTimeoutMillis: 5000,
+  });
 
   return pool;
 }
@@ -323,8 +321,10 @@ async function mssqlDryRunDDL(config: ConnectionConfig, ddl: string) {
     await transaction.rollback();
     return true;
   } catch (e) {
-    if (transaction.isActive) {
-        await transaction.rollback();
+    try {
+      await transaction.rollback();
+    } catch (rollbackErr) {
+      // Ignore rollback error
     }
     throw e;
   } finally {
