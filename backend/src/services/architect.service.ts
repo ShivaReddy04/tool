@@ -1,5 +1,5 @@
 import { HttpError } from '../utils/httpError';
-import * as repo from '../repositories/architect.repository';
+import * as repo from '../repositories';
 import { getColumnDefinitionsByTableId } from '../models/column_definition.model';
 import { getClusterConnectionConfig } from '../models/cluster.model';
 import { getConnector } from '../services/connector';
@@ -43,7 +43,7 @@ export const approveTemplate = async (id: string, reviewerId: string) => {
 export const rejectTemplate = async (id: string, reviewerId: string, comment?: string) => {
   const submission = await repo.getSubmissionForTable(id);
   if (submission) {
-    await repo.markSubmissionReviewed(submission.id, reviewerId, 'rejected', comment || null);
+    await repo.markSubmissionReviewed(submission.id, reviewerId, 'rejected', comment);
   }
   const updated = await repo.updateTableMetadata(id, { status: 'rejected', reviewed_by: reviewerId, review_comments: comment || null });
 

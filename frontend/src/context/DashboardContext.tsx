@@ -55,8 +55,12 @@ interface DashboardContextType {
   setIsDeleteModalOpen: (open: boolean) => void;
   isUploadDrawerOpen: boolean;
   setIsUploadDrawerOpen: (open: boolean) => void;
-  rightPanelMode: "properties" | "column-detail";
-  setRightPanelMode: (mode: "properties" | "column-detail") => void;
+  rightPanelMode: "properties" | "column-detail" | "row-detail";
+  setRightPanelMode: (mode: "properties" | "column-detail" | "row-detail") => void;
+
+  // Row selection for editing
+  selectedRowData: any;
+  setSelectedRowData: (row: any) => void;
 
   // Save & Submit
   hasUnsavedChanges: boolean;
@@ -139,9 +143,12 @@ export const DashboardProvider: React.FC<{ children: React.ReactNode }> = ({
   const [isCreateTableDrawerOpen, setIsCreateTableDrawerOpen] = useState(false);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [isUploadDrawerOpen, setIsUploadDrawerOpen] = useState(false);
-  const [rightPanelMode, setRightPanelMode] = useState<"properties" | "column-detail">(
+  const [rightPanelMode, setRightPanelMode] = useState<"properties" | "column-detail" | "row-detail">(
     "properties"
   );
+
+  // Selected row for editing
+  const [selectedRowData, setSelectedRowData] = useState<any>(null);
 
   // Save & Submit state
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(persisted?.hasUnsavedChanges ?? false);
@@ -171,6 +178,18 @@ export const DashboardProvider: React.FC<{ children: React.ReactNode }> = ({
       notifications,
     });
   }, [selectedClusterId, selectedDatabaseId, selectedSchemaId, selectedBusinessAreaId, tables, selectedTableId, tableDefinition, columns, currentStep, hasUnsavedChanges, submissionStatus, notifications]);
+
+  // Warn user before unloading page if there are unsaved changes
+  useEffect(() => {
+    const handler = (e: BeforeUnloadEvent) => {
+      if (hasUnsavedChanges) {
+        e.preventDefault();
+        e.returnValue = '';
+      }
+    };
+    window.addEventListener('beforeunload', handler);
+    return () => window.removeEventListener('beforeunload', handler);
+  }, [hasUnsavedChanges]);
 
   // Toast state
   const [toasts, setToasts] = useState<ToastData[]>([]);
@@ -725,6 +744,8 @@ export const DashboardProvider: React.FC<{ children: React.ReactNode }> = ({
         setIsUploadDrawerOpen,
         rightPanelMode,
         setRightPanelMode,
+        selectedRowData,
+        setSelectedRowData,
         hasUnsavedChanges,
         setHasUnsavedChanges,
         submissionStatus,

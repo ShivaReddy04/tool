@@ -30,7 +30,7 @@ export const signup = async (req: Request, res: Response): Promise<void> => {
     const salt = await bcrypt.genSalt(12);
     const passwordHash = await bcrypt.hash(password, salt);
 
-    const user = await createUser(email, passwordHash, firstName, lastName, role || 'developer');
+    const user = await createUser(email, passwordHash, firstName, lastName, (role ? role.toLowerCase() : 'developer') as any);
 
     const payload: TokenPayload = { userId: user.id, email: user.email, role: user.role };
     const tokens = generateTokens(payload);
@@ -39,6 +39,7 @@ export const signup = async (req: Request, res: Response): Promise<void> => {
     await saveRefreshToken(user.id, refreshTokenHash, getRefreshTokenExpiry());
 
     res.status(201).json({
+      token: tokens.accessToken,
       user: {
         id: user.id,
         email: user.email,
@@ -87,6 +88,7 @@ export const login = async (req: Request, res: Response): Promise<void> => {
     await saveRefreshToken(user.id, refreshTokenHash, getRefreshTokenExpiry());
 
     res.json({
+      token: tokens.accessToken,
       user: {
         id: user.id,
         email: user.email,
@@ -188,3 +190,85 @@ export const getProfile = async (req: Request, res: Response): Promise<void> => 
     res.status(500).json({ error: 'Internal server error' });
   }
 };
+
+// Helper to create account with fixed role
+export const signupDeveloper = async (req: Request, res: Response): Promise<void> => {
+  try {
+    req.body.role = 'developer';
+    await signup(req, res);
+  } catch (err) {
+    console.error('signupDeveloper error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+};
+
+export const signupArchitect = async (req: Request, res: Response): Promise<void> => {
+  try {
+    req.body.role = 'architect';
+    await signup(req, res);
+  } catch (err) {
+    console.error('signupArchitect error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+};
+
+// Login variants that enforce role
+const loginWithRole = (expectedRole: string) => {
+  return async (req: Request, res: Response): Promise<void> => {
+    try {
+      const { email, password } = req.body;
+
+      if (!email || !password) {
+        res.status(400).json({ error: 'Email and password are required' });
+        return;
+      }
+
+      const user = await findUserByEmail(email) as any;
+      if (!user) {
+        res.status(401).json({ error: 'Invalid credentials' });
+        return;
+      }
+
+      if (!user.is_active) {
+        res.status(403).json({ error: 'Account is deactivated' });
+        return;
+      }
+
+      const expectedRoleLower = expectedRole.toLowerCase();
+      if (user.role !== expectedRoleLower) {
+        res.status(403).json({ error: `Account is not a ${expectedRole}` });
+        return;
+      }
+
+      const isValidPassword = await bcrypt.compare(password, user.password_hash);
+      if (!isValidPassword) {
+        res.status(401).json({ error: 'Invalid credentials' });
+        return;
+      }
+
+      const payload: TokenPayload = { userId: user.id, email: user.email, role: user.role };
+      const tokens = generateTokens(payload);
+
+      const refreshTokenHash = hashToken(tokens.refreshToken);
+      await saveRefreshToken(user.id, refreshTokenHash, getRefreshTokenExpiry());
+
+      res.json({
+        token: tokens.accessToken,
+        user: {
+          id: user.id,
+          email: user.email,
+          firstName: user.first_name,
+          lastName: user.last_name,
+          role: user.role,
+        },
+        ...tokens,
+      });
+    } catch (err) {
+      console.error('LoginWithRole error:', err);
+      res.status(500).json({ error: 'Internal server error' });
+    }
+  };
+};
+
+export const loginDeveloper = loginWithRole('DEVELOPER');
+export const loginArchitect = loginWithRole('ARCHITECT');

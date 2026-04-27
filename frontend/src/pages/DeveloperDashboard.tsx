@@ -9,7 +9,7 @@ import {
   TableDataGrid,
   ChangeRequestPanel,
 } from "../components/table";
-import { ColumnDataGrid, ColumnDetailPanel } from "../components/columns";
+import { ColumnDataGrid, ColumnDetailPanel, RowDetailPanel } from "../components/columns";
 
 import { ReviewDrawer } from "../components/review";
 import { EmptyState, Card, Button, ToastContainer } from "../components/common";
@@ -119,6 +119,10 @@ const RightPanel: React.FC = () => {
 
   if (rightPanelMode === "column-detail" && selectedColumnId) {
     return <ColumnDetailPanel />;
+  }
+
+  if (rightPanelMode === "row-detail") {
+    return <RowDetailPanel />;
   }
 
   return <TablePropertiesPanel />;

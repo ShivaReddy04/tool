@@ -49,6 +49,11 @@ export const getAllTableDefinitions = async (connectionId: string, schemaName: s
     return result.rows;
 };
 
+export const getTableDefinitionByKey = async (connectionId: string, databaseName: string, schemaName: string, tableName: string): Promise<TableDefinition | null> => {
+    const result = await query('SELECT * FROM table_definitions WHERE connection_id = $1 AND database_name = $2 AND schema_name = $3 AND table_name = $4 LIMIT 1', [connectionId, databaseName, schemaName, tableName]);
+    return result.rows[0] || null;
+};
+
 export const updateTableStatus = async (id: string, status: string): Promise<void> => {
     await query('UPDATE table_definitions SET status = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2', [status, id]);
 };

@@ -21,11 +21,13 @@ const actionRowStyles: Record<ColumnAction, string> = {
 export const ColumnDataGrid: React.FC = () => {
   const { user } = useAuth();
   const {
+    selectedTableId,
     columns,
     updateColumn,
     selectedColumnId,
     setSelectedColumnId,
     setRightPanelMode,
+    setSelectedRowData,
     hasUnsavedChanges,
     submissionStatus,
     saveChanges,
@@ -34,6 +36,13 @@ export const ColumnDataGrid: React.FC = () => {
   } = useDashboard();
 
   const [searchTerm, setSearchTerm] = useState("");
+
+  // Table rows state
+  const [rows, setRows] = useState<any[]>([]);
+  const [loadingRows, setLoadingRows] = useState(false);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+  const [totalRows, setTotalRows] = useState<number | null>(null);
 
   const filteredColumns = columns.filter((col) =>
     col.columnName.toLowerCase().includes(searchTerm.toLowerCase())
@@ -47,6 +56,48 @@ export const ColumnDataGrid: React.FC = () => {
   const handleActionChange = (columnId: string, action: string) => {
     updateColumn(columnId, { action: action as ColumnAction });
   };
+
+  const [submitting, setSubmitting] = useState(false);
+
+  const handleSubmit = async () => {
+    if (!hasUnsavedChanges || submissionStatus === 'submitted' || !selectedTableId) return;
+    setSubmitting(true);
+    try {
+      // First persist changes
+      await saveChanges();
+      // Then submit for review
+      await submitForReview(user?.name ?? 'Unknown');
+      setSubmitting(false);
+    } catch (err) {
+      console.error('Submit for review failed:', err);
+      setSubmitting(false);
+    }
+  };
+
+  React.useEffect(() => {
+    // Fetch table data when table changes or pagination changes
+    const fetchRows = async () => {
+      if (!selectedTableId) return;
+      setLoadingRows(true);
+      try {
+        if (selectedTableId.includes('::')) {
+          const [connId, db, schema, tableName] = selectedTableId.split('::');
+          const res = await (await import('../../api/client')).default.get(`/clusters/${connId}/data`, { params: { schema, table: tableName, database: db } });
+          setRows(res.data || []);
+          setTotalRows(null);
+        } else {
+          const res = await (await import('../../api/client')).default.get(`/table-definitions/${selectedTableId}`, { params: { includeRows: true, page, pageSize } });
+          setRows(res.data.rows || []);
+          setTotalRows(res.data.totalRows ?? null);
+        }
+      } catch (err) {
+        console.error('Failed to load table rows:', err);
+      } finally {
+        setLoadingRows(false);
+      }
+    };
+    fetchRows();
+  }, [selectedTableId, page, pageSize]);
 
   if (columns.length === 0) {
     return null;
@@ -65,9 +116,6 @@ export const ColumnDataGrid: React.FC = () => {
           {submissionStatus === "submitted" && (
             <Badge variant="info">Submitted</Badge>
           )}
-          <Button variant="secondary" size="sm" onClick={saveChanges} disabled={!hasUnsavedChanges}>
-            Save
-          </Button>
           <Button
             variant="outline"
             size="sm"
@@ -79,10 +127,10 @@ export const ColumnDataGrid: React.FC = () => {
           <Button
             variant="primary"
             size="sm"
-            onClick={() => submitForReview(user?.name ?? "Unknown")}
-            disabled={hasUnsavedChanges || submissionStatus === "submitted"}
+            onClick={handleSubmit}
+            disabled={!hasUnsavedChanges || submissionStatus === "submitted" || submitting}
           >
-            Submit for Review
+            {submitting ? 'Submitting...' : 'Submit for Review'}
           </Button>
         </div>
       }
@@ -186,6 +234,58 @@ export const ColumnDataGrid: React.FC = () => {
             ))}
           </tbody>
         </table>
+      </div>
+
+      {/* Table data preview: shows sample rows inline in Schema Structure */}
+      <div className="px-4 py-4 border-t border-slate-100">
+        <div className="flex items-center justify-between mb-3">
+          <div className="text-sm font-semibold text-slate-700">Table Data Preview</div>
+          <div className="flex items-center gap-2">
+            <select value={pageSize} onChange={(e) => { setPageSize(Number(e.target.value)); setPage(1); }} className="text-sm p-1 border rounded">
+              <option value={5}>5</option>
+              <option value={10}>10</option>
+              <option value={20}>20</option>
+            </select>
+            <div className="text-sm text-slate-500">{totalRows !== null ? `${Math.min((page-1)*pageSize+1, totalRows)}-${Math.min(page*pageSize, totalRows)} of ${totalRows}` : ''}</div>
+          </div>
+        </div>
+
+        <div className="overflow-x-auto">
+          <table className="w-full">
+            <thead>
+              <tr className="border-b">
+                {columns.map((col) => (
+                  <th key={col.id} className="text-left px-3 py-2 text-xs text-slate-500">{col.columnName}</th>
+                ))}
+                <th className="px-3 py-2 text-xs text-slate-500 text-right">Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {loadingRows ? (
+                <tr><td className="p-4">Loading...</td></tr>
+              ) : rows.length === 0 ? (
+                <tr><td className="p-4">No rows</td></tr>
+              ) : rows.map((r, idx) => (
+                <tr key={idx} className="border-b">
+                  {columns.map((col) => (
+                    <td key={col.id} className="px-3 py-2 text-sm truncate">{String(r[col.columnName] ?? '')}</td>
+                  ))}
+                  <td className="px-3 py-2 text-right">
+                    <Button size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); setSelectedRowData(r); setRightPanelMode('row-detail'); }}>
+                      Edit
+                    </Button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        <div className="flex items-center justify-end gap-2 mt-3">
+          <Button variant="outline" size="sm" onClick={() => setPage((p) => Math.max(1, p-1))} disabled={page === 1}>Prev</Button>
+          <div className="text-sm text-slate-500">Page {page}</div>
+          <Button variant="outline" size="sm" onClick={() => setPage((p) => p+1)} disabled={totalRows !== null && page*pageSize >= totalRows}>Next</Button>
+        </div>
       </div>
 
       <div className="px-4 py-3 border-t border-slate-100">

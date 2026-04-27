@@ -1,6 +1,6 @@
 import { Request, Response } from 'express';
 import { createSubmission, getPendingSubmissions, reviewSubmission } from '../models/submission.model';
-import { updateTableStatus, getTableDefinitionDetails } from '../models/table_definition.model';
+import { updateTableStatus, getTableDefinitionDetails, getTableDefinitionByKey, createOrUpdateTableDefinition } from '../models/table_definition.model';
 import { getColumnDefinitionsByTableId } from '../models/column_definition.model';
 import { getClusterConnectionConfig } from '../models/cluster.model';
 import { getConnector } from '../services/connector';
@@ -15,15 +15,35 @@ export const submitTableForReview = async (req: Request, res: Response): Promise
             return;
         }
 
-        await updateTableStatus(tableId, 'submitted');
-        const submission = await createSubmission(tableId, submittedBy);
+        let tableDefinitionId = tableId;
+        // If frontend passed a physical table identifier (connId::db::schema::table), create or find a table_definition
+        if (typeof tableId === 'string' && tableId.includes('::')) {
+            const [connectionId, databaseName, schemaName, tableName] = tableId.split('::');
+            // Try to find existing table definition
+            const existing = await getTableDefinitionByKey(connectionId, databaseName, schemaName, tableName);
+            if (existing) {
+                tableDefinitionId = existing.id;
+            } else {
+                const newTableDef = await createOrUpdateTableDefinition({
+                    connection_id: connectionId,
+                    database_name: databaseName,
+                    schema_name: schemaName,
+                    table_name: tableName,
+                    created_by: submittedBy
+                });
+                tableDefinitionId = newTableDef.id;
+            }
+        }
+
+        await updateTableStatus(tableDefinitionId, 'submitted');
+        const submission = await createSubmission(tableDefinitionId, submittedBy);
 
         await createAuditLog({
             action: 'SUBMIT_FOR_REVIEW',
             entity_type: 'submission',
             entity_id: submission.id,
             user_name: submittedBy,
-            metadata: { table_id: tableId }
+            metadata: { table_id: tableDefinitionId }
         });
 
         const tableDef = await getTableDefinitionDetails(tableId);

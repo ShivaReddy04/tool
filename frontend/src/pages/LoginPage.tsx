@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 
 export const LoginPage: React.FC = () => {
-  const { loginWithCredentials } = useAuth();
+  const { loginWithCredentials, user } = useAuth();
   const navigate = useNavigate();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -31,7 +31,10 @@ export const LoginPage: React.FC = () => {
     if (err) {
       setError(err);
     } else {
-      navigate("/dashboard");
+      const stored = localStorage.getItem('user');
+      const newUser = stored ? JSON.parse(stored) : null;
+      if (newUser?.role === 'architect') navigate('/architect/dashboard');
+      else navigate('/developer/dashboard');
     }
   };
 

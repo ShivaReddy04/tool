@@ -8,7 +8,7 @@ interface AuthContextType {
   isLoading: boolean;
   hasRole: (...roles: UserRole[]) => boolean;
   loginWithCredentials: (email: string, password: string) => Promise<string | null>;
-  signup: (firstName: string, lastName: string, email: string, password: string) => Promise<string | null>;
+  signup: (firstName: string, lastName: string, email: string, password: string, role?: string) => Promise<string | null>;
   logout: () => Promise<void>;
 }
 
@@ -44,12 +44,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const profile = await api.get("/auth/profile", {
           headers: { Authorization: `Bearer ${data.accessToken}` },
         });
-        setUser({
+        const userObj = {
           id: profile.data.id,
           name: `${profile.data.firstName} ${profile.data.lastName}`,
           email: profile.data.email,
           role: profile.data.role,
-        });
+        };
+        setUser(userObj);
+        localStorage.setItem('accessToken', data.accessToken);
+        localStorage.setItem('user', JSON.stringify(userObj));
       } catch {
         // No valid session — user needs to log in
         setUser(null);
@@ -74,12 +77,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       try {
         const { data } = await api.post("/auth/login", { email, password });
         setAccessToken(data.accessToken);
-        setUser({
+        const userObj = {
           id: data.user.id,
           name: `${data.user.firstName} ${data.user.lastName}`,
           email: data.user.email,
           role: data.user.role,
-        });
+        };
+        setUser(userObj);
+        localStorage.setItem('accessToken', data.accessToken);
+        localStorage.setItem('user', JSON.stringify(userObj));
         return null;
       } catch (err: any) {
         return err.response?.data?.error || "Login failed. Please try again.";
@@ -89,22 +95,25 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   );
 
   const signup = useCallback(
-    async (firstName: string, lastName: string, email: string, password: string): Promise<string | null> => {
+    async (firstName: string, lastName: string, email: string, password: string, role: string = 'developer'): Promise<string | null> => {
       try {
         const { data } = await api.post("/auth/signup", {
           email,
           password,
           firstName,
           lastName,
-          role: "developer",
+          role,
         });
         setAccessToken(data.accessToken);
-        setUser({
+        const userObj = {
           id: data.user.id,
           name: `${data.user.firstName} ${data.user.lastName}`,
           email: data.user.email,
           role: data.user.role,
-        });
+        };
+        setUser(userObj);
+        localStorage.setItem('accessToken', data.accessToken);
+        localStorage.setItem('user', JSON.stringify(userObj));
         return null;
       } catch (err: any) {
         return err.response?.data?.error || "Signup failed. Please try again.";

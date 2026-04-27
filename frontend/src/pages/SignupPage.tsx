@@ -3,13 +3,14 @@ import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 
 export const SignupPage: React.FC = () => {
-  const { signup } = useAuth();
+  const { signup, user } = useAuth();
   const navigate = useNavigate();
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [role, setRole] = useState<"developer" | "architect">("developer");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
@@ -40,13 +41,16 @@ export const SignupPage: React.FC = () => {
     }
 
     setLoading(true);
-    const err = await signup(firstName.trim(), lastName.trim(), email.trim(), password);
+    const err = await signup(firstName.trim(), lastName.trim(), email.trim(), password, role);
     setLoading(false);
 
     if (err) {
       setError(err);
     } else {
-      navigate("/dashboard");
+      const stored = localStorage.getItem('user');
+      const newUser = stored ? JSON.parse(stored) : null;
+      if (newUser?.role === 'architect') navigate('/architect/dashboard');
+      else navigate('/developer/dashboard');
     }
   };
 
@@ -170,6 +174,22 @@ export const SignupPage: React.FC = () => {
                 autoComplete="new-password"
                 disabled={loading}
               />
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium text-slate-600 uppercase tracking-wide mb-1.5">
+                Role
+              </label>
+              <div className="flex gap-4 items-center mt-2">
+                <label className="inline-flex items-center">
+                  <input type="radio" name="role" value="developer" checked={role === 'developer'} onChange={() => setRole('developer')} className="mr-2" />
+                  Developer
+                </label>
+                <label className="inline-flex items-center">
+                  <input type="radio" name="role" value="architect" checked={role === 'architect'} onChange={() => setRole('architect')} className="mr-2" />
+                  Architect
+                </label>
+              </div>
             </div>
 
             <button
