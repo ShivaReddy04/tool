@@ -9,6 +9,7 @@ import schemaRoutes from './routes/schema.routes';
 import businessAreaRoutes from './routes/business_area.routes';
 import tableDefinitionRoutes from './routes/table_definition.routes';
 import submissionRoutes from './routes/submission.routes';
+import architectRoutes from './routes/architect.routes';
 import changeRequestRoutes from './routes/change_request.routes';
 
 dotenv.config();
@@ -31,11 +32,16 @@ app.use('/api/schemas', schemaRoutes);
 app.use('/api/business-areas', businessAreaRoutes);
 app.use('/api/table-definitions', tableDefinitionRoutes);
 app.use('/api/submissions', submissionRoutes);
+app.use('/api/architect', architectRoutes);
 app.use('/api/change-requests', changeRequestRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', service: 'DART API' });
 });
+
+// Error handler (last middleware)
+import { errorHandler } from './middleware/errorHandler';
+app.use(errorHandler);
 
 export default app;

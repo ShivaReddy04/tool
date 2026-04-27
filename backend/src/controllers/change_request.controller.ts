@@ -53,7 +53,12 @@ export const list = async (req: Request, res: Response): Promise<void> => {
 // PUT /api/change-requests/:id/approve
 export const approve = async (req: Request, res: Response): Promise<void> => {
   try {
-    const id = parseInt(req.params.id, 10);
+    const idStr = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+    if (!idStr) {
+      res.status(400).json({ error: 'Invalid id parameter' });
+      return;
+    }
+    const id = parseInt(idStr, 10);
     const cr = await getChangeRequestById(id);
     if (!cr) {
       res.status(404).json({ error: 'Change request not found' });
@@ -152,7 +157,12 @@ export const approve = async (req: Request, res: Response): Promise<void> => {
 // PUT /api/change-requests/:id/reject
 export const reject = async (req: Request, res: Response): Promise<void> => {
   try {
-    const id = parseInt(req.params.id, 10);
+    const idStr = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+    if (!idStr) {
+      res.status(400).json({ error: 'Invalid id parameter' });
+      return;
+    }
+    const id = parseInt(idStr, 10);
     const cr = await getChangeRequestById(id);
     if (!cr) {
       res.status(404).json({ error: 'Change request not found' });

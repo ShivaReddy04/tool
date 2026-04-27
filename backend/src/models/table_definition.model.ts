@@ -11,8 +11,11 @@ export interface TableDefinition {
     keys?: string;
     vertical_name?: string;
     business_area_id?: string;
-    status: 'draft' | 'submitted' | 'approved' | 'rejected' | 'applied';
+    status: 'draft' | 'submitted' | 'approved' | 'rejected' | 'applied' | 'processed';
     created_by?: string;
+    reviewed_by?: string;
+    review_comments?: string;
+    processed_at?: Date;
     created_at: Date;
     updated_at: Date;
 }

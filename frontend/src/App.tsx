@@ -7,6 +7,8 @@ import { DeveloperDashboard } from "./pages/DeveloperDashboard";
 import { LoginPage } from "./pages/LoginPage";
 import { SignupPage } from "./pages/SignupPage";
 import { UnauthorizedPage } from "./pages/UnauthorizedPage";
+import { ArchitectDashboard } from "./pages/ArchitectDashboard";
+import { TemplateReview } from "./pages/TemplateReview";
 
 const App: React.FC = () => {
   return (
@@ -23,6 +25,24 @@ const App: React.FC = () => {
                 <DashboardProvider>
                   <DeveloperDashboard />
                 </DashboardProvider>
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="/architect"
+            element={
+              <ProtectedRoute allowedRoles={["architect"]}>
+                <ArchitectDashboard />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="/architect/templates/:id"
+            element={
+              <ProtectedRoute allowedRoles={["architect"]}>
+                <TemplateReview />
               </ProtectedRoute>
             }
           />
