@@ -118,7 +118,7 @@ export const EditRowDrawer: React.FC<EditRowDrawerProps> = ({
           <Button variant="ghost" onClick={onClose} disabled={loading}>
             Cancel
           </Button>
-          <Button variant="primary" onClick={handleApply} isLoading={loading}>
+          <Button variant="primary" onClick={handleApply} loading={loading}>
             Apply Changes
           </Button>
         </div>
