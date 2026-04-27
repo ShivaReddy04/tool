@@ -114,10 +114,10 @@ async function pgGetTableData(config: ConnectionConfig, schema: string, table: s
   }
 }
 
-async function pgRunQuery(config: ConnectionConfig, queryStr: string) {
+async function pgRunQuery(config: ConnectionConfig, queryStr: string, params?: any[]) {
   const pool = await pgConnect(config);
   try {
-    const res = await pool.query(queryStr);
+    const res = await pool.query(queryStr, params);
     return res;
   } finally {
     await pool.end();
@@ -206,10 +206,10 @@ async function mysqlGetTableData(config: ConnectionConfig, schema: string, table
   }
 }
 
-async function mysqlRunQuery(config: ConnectionConfig, queryStr: string) {
+async function mysqlRunQuery(config: ConnectionConfig, queryStr: string, params?: any[]) {
   const conn = await mysqlConnect(config);
   try {
-    const [result] = await conn.query(queryStr);
+    const [result] = await conn.query(queryStr, params);
     return result;
   } finally {
     await conn.end();
@@ -301,10 +301,16 @@ async function mssqlGetTableData(config: ConnectionConfig, schema: string, table
   }
 }
 
-async function mssqlRunQuery(config: ConnectionConfig, queryStr: string) {
+async function mssqlRunQuery(config: ConnectionConfig, queryStr: string, params?: any[]) {
   const pool = await mssqlConnect(config);
   try {
-    const res = await pool.query(queryStr);
+    const req = pool.request();
+    if (params) {
+      params.forEach((p, i) => {
+        req.input(`p${i}`, p);
+      });
+    }
+    const res = await req.query(queryStr);
     return res;
   } finally {
     await pool.close();

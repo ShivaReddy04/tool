@@ -1,14 +1,15 @@
 import React, { useState, useEffect } from "react";
 import { useDashboard } from "../../context/DashboardContext";
 import { Card, EmptyState, Button } from "../common";
-import { fetchTableData, updateTableData } from "../../api/connections";
+import { fetchTableData } from "../../api/connections";
+import { EditRowDrawer } from "./EditRowDrawer";
 
 export const TableDataGrid: React.FC = () => {
     const { selectedClusterId, selectedDatabaseId, selectedSchemaId, tableDefinition, addToast } = useDashboard();
     const [data, setData] = useState<any[]>([]);
     const [loading, setLoading] = useState(false);
-    const [editingRowIndex, setEditingRowIndex] = useState<number | null>(null);
-    const [editedRowData, setEditedRowData] = useState<any | null>(null);
+    const [isDrawerOpen, setIsDrawerOpen] = useState(false);
+    const [selectedRow, setSelectedRow] = useState<any | null>(null);
 
     useEffect(() => {
         if (!selectedClusterId || !selectedSchemaId || !tableDefinition?.tableName) {
@@ -19,8 +20,8 @@ export const TableDataGrid: React.FC = () => {
         let isMounted = true;
         const load = async () => {
             setLoading(true);
-            setEditingRowIndex(null);
-            setEditedRowData(null);
+            setIsDrawerOpen(false);
+            setSelectedRow(null);
             try {
                 const rows = await fetchTableData(selectedClusterId, selectedSchemaId, tableDefinition.tableName, selectedDatabaseId);
                 if (isMounted) {
@@ -38,7 +39,7 @@ export const TableDataGrid: React.FC = () => {
 
         load();
         return () => { isMounted = false; };
-    }, [selectedClusterId, selectedSchemaId, tableDefinition?.tableName, addToast]);
+    }, [selectedClusterId, selectedDatabaseId, selectedSchemaId, tableDefinition?.tableName, addToast]);
 
     if (loading) {
         return (
@@ -58,36 +59,18 @@ export const TableDataGrid: React.FC = () => {
 
     const columns = Object.keys(data[0]);
 
-    const handleEditClick = (index: number, row: any) => {
-        setEditingRowIndex(index);
-        setEditedRowData({ ...row });
+    const handleEditClick = (row: any) => {
+        setSelectedRow(row);
+        setIsDrawerOpen(true);
     };
 
-    const handleCancelEdit = () => {
-        setEditingRowIndex(null);
-        setEditedRowData(null);
+    const handleDrawerClose = () => {
+        setIsDrawerOpen(false);
+        setSelectedRow(null);
     };
 
-    const handleSaveRow = async (index: number) => {
-        if (!selectedClusterId || !selectedSchemaId || !tableDefinition?.tableName) return;
-        try {
-            await updateTableData(selectedClusterId, selectedSchemaId, tableDefinition.tableName, data[index], editedRowData, selectedDatabaseId);
-
-            const newData = [...data];
-            newData[index] = editedRowData;
-            setData(newData);
-
-            addToast("success", "Row updated successfully!");
-            setEditingRowIndex(null);
-            setEditedRowData(null);
-        } catch (err) {
-            addToast("error", "Failed to update row. Make sure changes match data types and constraints.");
-            console.error(err);
-        }
-    };
-
-    const handleInputChange = (col: string, val: string) => {
-        setEditedRowData((prev: any) => ({ ...prev, [col]: val }));
+    const handleDrawerSuccess = () => {
+        addToast("success", "Change request submitted successfully. It is pending architect review.");
     };
 
     return (
@@ -108,29 +91,14 @@ export const TableDataGrid: React.FC = () => {
                     </thead>
                     <tbody>
                         {data.map((row, i) => {
-                            const isEditing = editingRowIndex === i;
                             return (
-                                <tr key={i} className={`border-b border-slate-50 transition-colors ${isEditing ? "bg-amber-50" : "hover:bg-slate-50"}`}>
+                                <tr key={i} className={`border-b border-slate-50 transition-colors hover:bg-slate-50`}>
                                     <td className="px-4 py-3 align-middle border-r border-slate-100 bg-white sticky left-0 z-10 drop-shadow-sm">
-                                        {isEditing ? (
-                                            <div className="flex gap-2">
-                                                <Button size="sm" variant="primary" onClick={() => handleSaveRow(i)}>Save</Button>
-                                                <Button size="sm" variant="ghost" onClick={handleCancelEdit}>Cancel</Button>
-                                            </div>
-                                        ) : (
-                                            <Button size="sm" variant="outline" onClick={() => handleEditClick(i, row)}>Edit</Button>
-                                        )}
+                                        <Button size="sm" variant="outline" onClick={() => handleEditClick(row)}>Edit</Button>
                                     </td>
                                     {columns.map((col) => (
-                                        <td key={col} className={`px-4 py-3 text-sm text-slate-700 font-mono ${isEditing ? "p-2" : ""}`}>
-                                            {isEditing ? (
-                                                <input
-                                                    type="text"
-                                                    className="w-full min-w-32 px-3 py-1.5 text-sm border border-slate-300 rounded shadow-inner focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                                                    value={editedRowData[col] !== null ? editedRowData[col] : ""}
-                                                    onChange={(e) => handleInputChange(col, e.target.value)}
-                                                />
-                                            ) : row[col] !== null ? (
+                                        <td key={col} className={`px-4 py-3 text-sm text-slate-700 font-mono`} onClick={() => handleEditClick(row)}>
+                                            {row[col] !== null ? (
                                                 String(row[col])
                                             ) : (
                                                 <span className="text-slate-400 italic">null</span>
@@ -143,6 +111,18 @@ export const TableDataGrid: React.FC = () => {
                     </tbody>
                 </table>
             </div>
+            
+            <EditRowDrawer
+                isOpen={isDrawerOpen}
+                onClose={handleDrawerClose}
+                rowData={selectedRow}
+                columns={columns.map(c => ({ name: c, isPrimaryKey: c.toLowerCase() === 'id' }))}
+                tableName={tableDefinition?.tableName || ''}
+                connectionId={selectedClusterId || ''}
+                databaseName={selectedDatabaseId || undefined}
+                schemaName={selectedSchemaId || undefined}
+                onSuccess={handleDrawerSuccess}
+            />
         </Card>
     );
 };

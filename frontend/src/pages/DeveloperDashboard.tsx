@@ -7,6 +7,7 @@ import {
   CreateTableDrawer,
   DeleteTableModal,
   TableDataGrid,
+  ChangeRequestPanel,
 } from "../components/table";
 import { ColumnDataGrid, ColumnDetailPanel } from "../components/columns";
 
@@ -15,9 +16,9 @@ import { EmptyState, Card, Button, ToastContainer } from "../components/common";
 import { useDashboard } from "../context/DashboardContext";
 
 const CenterPanel: React.FC = () => {
-  const { selectedClusterId, selectedSchemaId, selectedTableId, columns } =
+  const { selectedClusterId, selectedSchemaId, selectedTableId, columns, tableDefinition } =
     useDashboard();
-  const [activeTab, setActiveTab] = React.useState<"schema" | "data">("schema");
+  const [activeTab, setActiveTab] = React.useState<"schema" | "data" | "requests">("schema");
 
   if (!selectedClusterId || !selectedSchemaId) {
     return (
@@ -70,8 +71,19 @@ const CenterPanel: React.FC = () => {
             >
               Data Preview
             </button>
+            <button
+              onClick={() => setActiveTab("requests")}
+              className={`px-4 py-1.5 text-sm font-medium rounded-md transition-colors ${activeTab === "requests"
+                  ? "bg-white text-indigo-600 shadow-sm"
+                  : "text-slate-600 hover:text-slate-900"
+                }`}
+            >
+              Data Change Requests
+            </button>
           </div>
-          {activeTab === "schema" ? <ColumnDataGrid /> : <TableDataGrid />}
+          {activeTab === "schema" && <ColumnDataGrid />}
+          {activeTab === "data" && <TableDataGrid />}
+          {activeTab === "requests" && <ChangeRequestPanel />}
         </div>
       ) : selectedTableId ? (
         <Card>
