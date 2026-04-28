@@ -150,14 +150,18 @@ export const handleReviewAndSync = async (req: Request, res: Response): Promise<
 
                 const statements: string[] = [];
                 if (!tableExists) {
+                    if (dbType === 'postgresql' || dbType === 'redshift') {
+                        statements.push(`CREATE SCHEMA IF NOT EXISTS "${tableDef.schema_name.replace(/"/g, '""')}"`);
+                    }
                     const create = buildCreateTableDDL(dbType, tableDef.schema_name, tableDef.table_name, snapshotColumns);
                     if (create) statements.push(create);
                 } else if (hasPendingChanges(snapshotColumns)) {
                     statements.push(...buildAlterDDL(dbType, tableDef.schema_name, tableDef.table_name, snapshotColumns));
                 }
 
-                for (const stmt of statements) {
-                    await connector.runQuery(connInfo.config, stmt);
+                if (statements.length > 0) {
+                    console.log('[approval] Applying DDL to', connInfo.cluster.name, statements);
+                    await connector.runDDLBatch(connInfo.config, statements);
                 }
 
                 await commitColumnActions(reviewedSubmission.table_id);

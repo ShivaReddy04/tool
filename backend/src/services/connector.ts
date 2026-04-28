@@ -144,6 +144,25 @@ async function pgDryRunDDL(config: ConnectionConfig, ddl: string) {
   }
 }
 
+async function pgRunDDLBatch(config: ConnectionConfig, statements: string[]) {
+  if (statements.length === 0) return;
+  const pool = await pgConnect(config);
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    for (const stmt of statements) {
+      await client.query(stmt);
+    }
+    await client.query('COMMIT');
+  } catch (e) {
+    try { await client.query('ROLLBACK'); } catch { /* ignore */ }
+    throw e;
+  } finally {
+    client.release();
+    await pool.end();
+  }
+}
+
 // ── MySQL ─────────────────
 async function mysqlConnect(config: ConnectionConfig) {
   return mysql.createConnection(config);
@@ -221,6 +240,20 @@ async function mysqlRunQuery(config: ConnectionConfig, queryStr: string, params?
 
 async function mysqlDryRunDDL(config: ConnectionConfig, ddl: string) {
   throw new Error("Dry Run DDL not supported natively in MySQL without side effects");
+}
+
+async function mysqlRunDDLBatch(config: ConnectionConfig, statements: string[]) {
+  if (statements.length === 0) return;
+  // MySQL DDL statements implicitly commit, so a real transaction wouldn't roll back
+  // ALTER/CREATE anyway. Run sequentially and surface the first failure.
+  const conn = await mysqlConnect(config);
+  try {
+    for (const stmt of statements) {
+      await conn.query(stmt);
+    }
+  } finally {
+    await conn.end();
+  }
 }
 
 // ── MSSQL ─────────────────
@@ -341,6 +374,25 @@ async function mssqlDryRunDDL(config: ConnectionConfig, ddl: string) {
   }
 }
 
+async function mssqlRunDDLBatch(config: ConnectionConfig, statements: string[]) {
+  if (statements.length === 0) return;
+  const pool = await mssqlConnect(config);
+  const transaction = new sql.Transaction(pool);
+  try {
+    await transaction.begin();
+    for (const stmt of statements) {
+      const req = new sql.Request(transaction);
+      await req.query(stmt);
+    }
+    await transaction.commit();
+  } catch (e) {
+    try { await transaction.rollback(); } catch { /* ignore */ }
+    throw e;
+  } finally {
+    await pool.close();
+  }
+}
+
 // ── CONNECTORS MAP ─────────────────
 type DbType = 'postgresql' | 'mysql' | 'mssql' | 'redshift';
 
@@ -354,6 +406,7 @@ const connectors: Record<DbType, any> = {
     getTableData: pgGetTableData,
     runQuery: pgRunQuery,
     dryRunDDL: pgDryRunDDL,
+    runDDLBatch: pgRunDDLBatch,
   },
   redshift: {
     test: pgTest,
@@ -364,6 +417,7 @@ const connectors: Record<DbType, any> = {
     getTableData: pgGetTableData,
     runQuery: pgRunQuery,
     dryRunDDL: pgDryRunDDL,
+    runDDLBatch: pgRunDDLBatch,
   },
   mysql: {
     test: mysqlTest,
@@ -374,6 +428,7 @@ const connectors: Record<DbType, any> = {
     getTableData: mysqlGetTableData,
     runQuery: mysqlRunQuery,
     dryRunDDL: mysqlDryRunDDL,
+    runDDLBatch: mysqlRunDDLBatch,
   },
   mssql: {
     test: mssqlTest,
@@ -384,6 +439,7 @@ const connectors: Record<DbType, any> = {
     getTableData: mssqlGetTableData,
     runQuery: mssqlRunQuery,
     dryRunDDL: mssqlDryRunDDL,
+    runDDLBatch: mssqlRunDDLBatch,
   },
 };
 
