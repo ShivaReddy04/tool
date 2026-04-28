@@ -105,7 +105,7 @@ export const login = async (req: Request, res: Response): Promise<void> => {
     });
 
     res.json({
-      token: tokens.accessToken,
+      accessToken: tokens.accessToken,  // ✅ FIXED
       user: {
         id: user.id,
         email: user.email,
