@@ -40,6 +40,11 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', service: 'DART API' });
 });
 
+// Root endpoint
+app.get('/', (req, res) => {
+  res.send('DART API is running 🚀');
+});
+
 // Error handler (last middleware)
 import { errorHandler } from './middleware/errorHandler';
 app.use(errorHandler);
