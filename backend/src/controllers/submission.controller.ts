@@ -1,11 +1,12 @@
 import { Request, Response } from 'express';
 import { createSubmission, getPendingSubmissions, reviewSubmission, SubmissionPayload } from '../models/submission.model';
 import { updateTableStatus, getTableDefinitionDetails, getTableDefinitionByKey, createOrUpdateTableDefinition } from '../models/table_definition.model';
-import { getColumnDefinitionsByTableId } from '../models/column_definition.model';
+import { getColumnDefinitionsByTableId, commitColumnActions } from '../models/column_definition.model';
 import { getClusterConnectionConfig } from '../models/cluster.model';
 import { getConnector } from '../services/connector';
 import { createAuditLog } from '../models/audit_log.model';
 import { broadcastSubmissionEvent } from '../utils/webhook';
+import { buildCreateTableDDL, buildAlterDDL, hasPendingChanges, DbType, DDLColumn } from '../utils/ddl_generator';
 
 export const submitTableForReview = async (req: Request, res: Response): Promise<void> => {
     try {
@@ -118,33 +119,68 @@ export const handleReviewAndSync = async (req: Request, res: Response): Promise<
 
         if (status === 'approved') {
             try {
-                // Sync Hook logic
                 const tableDef = await getTableDefinitionDetails(reviewedSubmission.table_id);
-                const columnsDef = await getColumnDefinitionsByTableId(reviewedSubmission.table_id);
-                if (tableDef) {
-                    const connInfo = await getClusterConnectionConfig(tableDef.connection_id);
-                    if (connInfo) {
-                        const connector = getConnector(connInfo.cluster.db_type);
-
-                        // Generate simple DDL Create Table for Sync Demo (since 'ALTER' is significantly more complex to mock generalized logic for across dialects)
-                        const colsDDL = columnsDef.map(c => `${c.column_name} ${c.data_type} ${c.is_nullable ? 'NULL' : 'NOT NULL'}`).join(', ');
-                        const ddl = `CREATE TABLE ${tableDef.schema_name}.${tableDef.table_name} (${colsDDL})`;
-
-                        await connector.executeDDL(connInfo.config, ddl);
-                        await updateTableStatus(reviewedSubmission.table_id, 'applied');
-
-                        await createAuditLog({
-                            action: 'EXECUTE_DDL',
-                            entity_type: 'table_definition',
-                            entity_id: reviewedSubmission.table_id,
-                            user_name: 'DART_SYSTEM',
-                            metadata: { target_cluster: connInfo.cluster.name, target_schema: tableDef.schema_name, target_table: tableDef.table_name }
-                        });
-                    }
+                if (!tableDef) {
+                    res.status(404).json({ error: 'Table definition not found' });
+                    return;
                 }
-            } catch (syncErr) {
+
+                // Drive the apply step from the submission snapshot — that is what was
+                // approved, regardless of subsequent edits. Fall back to current state for
+                // legacy submissions that pre-date the payload column.
+                const snapshotColumns: DDLColumn[] =
+                    Array.isArray(reviewedSubmission.payload?.columns) && reviewedSubmission.payload!.columns.length > 0
+                        ? (reviewedSubmission.payload!.columns as DDLColumn[])
+                        : ((await getColumnDefinitionsByTableId(reviewedSubmission.table_id)) as unknown as DDLColumn[]);
+
+                const connInfo = await getClusterConnectionConfig(tableDef.connection_id);
+                if (!connInfo) {
+                    res.status(404).json({ error: 'Connection configuration not found' });
+                    return;
+                }
+
+                const dbType = connInfo.cluster.db_type as DbType;
+                const connector = getConnector(dbType);
+
+                // Detect whether the physical table already exists
+                const existingTables: any[] = await connector.getTables(connInfo.config, tableDef.schema_name);
+                const tableExists = existingTables.some(
+                    (t) => (t.table_name || '').toLowerCase() === tableDef.table_name.toLowerCase()
+                );
+
+                const statements: string[] = [];
+                if (!tableExists) {
+                    const create = buildCreateTableDDL(dbType, tableDef.schema_name, tableDef.table_name, snapshotColumns);
+                    if (create) statements.push(create);
+                } else if (hasPendingChanges(snapshotColumns)) {
+                    statements.push(...buildAlterDDL(dbType, tableDef.schema_name, tableDef.table_name, snapshotColumns));
+                }
+
+                for (const stmt of statements) {
+                    await connector.runQuery(connInfo.config, stmt);
+                }
+
+                await commitColumnActions(reviewedSubmission.table_id);
+                await updateTableStatus(reviewedSubmission.table_id, 'applied');
+
+                await createAuditLog({
+                    action: 'EXECUTE_DDL',
+                    entity_type: 'table_definition',
+                    entity_id: reviewedSubmission.table_id,
+                    user_name: 'DART_SYSTEM',
+                    metadata: {
+                        target_cluster: connInfo.cluster.name,
+                        target_schema: tableDef.schema_name,
+                        target_table: tableDef.table_name,
+                        statements,
+                    },
+                });
+            } catch (syncErr: any) {
                 console.error('Database Sync Hook Error:', syncErr);
-                res.status(500).json({ error: 'Review recorded, but Database schema push failed.', details: syncErr });
+                res.status(500).json({
+                    error: 'Review recorded, but database schema push failed.',
+                    details: syncErr?.message || String(syncErr),
+                });
                 return;
             }
         }

@@ -38,3 +38,17 @@ export const getColumnDefinitionsByTableId = async (tableId: string): Promise<Co
     const result = await query('SELECT * FROM column_definitions WHERE table_id = $1 ORDER BY sort_order ASC', [tableId]);
     return result.rows;
 };
+
+/**
+ * After an approved submission has been pushed to the target database, commit
+ * the diff into our metadata: physically delete columns marked Drop, and reset
+ * every remaining column's action to 'No Change' so the next submission will
+ * diff cleanly.
+ */
+export const commitColumnActions = async (tableId: string): Promise<void> => {
+    await query(`DELETE FROM column_definitions WHERE table_id = $1 AND action = 'Drop'`, [tableId]);
+    await query(
+        `UPDATE column_definitions SET action = 'No Change', updated_at = CURRENT_TIMESTAMP WHERE table_id = $1`,
+        [tableId]
+    );
+};
