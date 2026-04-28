@@ -68,7 +68,7 @@ interface DashboardContextType {
   submissionStatus: SubmissionStatus;
   saveChanges: () => void;
   dryRunValidation: () => Promise<void>;
-  submitForReview: (submittedByName: string) => void;
+  submitForReview: (submittedById: string, submittedByName?: string) => void;
 
   // Review (Architect)
   reviewingNotification: Notification | null;
@@ -308,23 +308,25 @@ export const DashboardProvider: React.FC<{ children: React.ReactNode }> = ({
   }, [tableDefinition, columns, selectedClusterId, selectedDatabaseId, selectedSchemaId, addToast]);
 
   const submitForReview = useCallback(
-    async (submittedByName: string) => {
+    async (submittedById: string, submittedByName?: string) => {
       if (!tableDefinition || !tableDefinition.id || tableDefinition.id.startsWith('tbl-new')) {
         addToast("error", "Please save the table before submitting.");
         return;
       }
       try {
-        const res = await api.post('/submissions', { tableId: tableDefinition.id, submittedBy: submittedByName });
+        const res = await api.post('/submissions', { tableId: tableDefinition.id, submittedBy: submittedById });
         setSubmissionStatus("submitted");
         setHasUnsavedChanges(false);
+
+        const displayName = submittedByName || submittedById;
 
         const notification: Notification = {
           id: `notif-${Date.now()}`,
           type: "submission",
           title: "Table Submitted for Review",
-          message: `${submittedByName} submitted "${tableDefinition.tableName}" for review.`,
+          message: `${displayName} submitted "${tableDefinition.tableName}" for review.`,
           tableName: tableDefinition.tableName,
-          submittedBy: submittedByName,
+          submittedBy: displayName,
           timestamp: new Date().toISOString(),
           isRead: false,
           targetRole: "architect",

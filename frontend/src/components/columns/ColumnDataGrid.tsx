@@ -66,7 +66,7 @@ export const ColumnDataGrid: React.FC = () => {
       // First persist changes
       await saveChanges();
       // Then submit for review
-      await submitForReview(user?.name ?? 'Unknown');
+      await submitForReview(user?.id ?? user?.name ?? 'Unknown', user?.name ?? user?.id ?? 'Unknown');
       setSubmitting(false);
     } catch (err) {
       console.error('Submit for review failed:', err);

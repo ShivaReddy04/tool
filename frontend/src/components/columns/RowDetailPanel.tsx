@@ -4,7 +4,7 @@ import { Card, TextInput, Button } from "../common";
 
 export const RowDetailPanel: React.FC = () => {
   const dashboard = useDashboard() as any;
-  const { selectedRowData, setSelectedRowData, selectedTableId, tableDefinition, addToast, refreshTable, setRightPanelMode } = dashboard;
+  const { selectedRowData, setSelectedRowData, selectedTableId, tableDefinition, addToast, refreshTable, setRightPanelMode, setHasUnsavedChanges } = dashboard;
 
   if (!selectedRowData) return null;
 
@@ -50,6 +50,7 @@ export const RowDetailPanel: React.FC = () => {
         addToast('success', 'Row updated successfully');
         setSelectedRowData(null);
         setRightPanelMode('properties');
+        setHasUnsavedChanges(true);
         refreshTable();
       } else {
         addToast('error', res.data?.message || 'Update failed');
