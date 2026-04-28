@@ -4,17 +4,30 @@ import { initializeDatabase } from './config/initDb';
 const PORT = process.env.PORT || 5000;
 
 const start = async () => {
-  try {
-    await initializeDatabase();
+  // Start the server immediately without waiting for database
+  const server = app.listen(PORT, () => {
+    console.log(`DART API server running on port ${PORT}`);
+    console.log(`Health check: http://localhost:${PORT}/api/health`);
+  });
 
-    app.listen(PORT, () => {
-      console.log(`DART API server running on port ${PORT}`);
-      console.log(`Health check: http://localhost:${PORT}/api/health`);
+  // Try to initialize database in background (non-blocking)
+  initializeDatabase()
+    .then(() => {
+      console.log('✓ Database connection verified and ready');
+    })
+    .catch((err) => {
+      console.error('✗ Database connection failed. Server is running but database features will not work:', err);
+      console.error('Please configure DATABASE_URL or database environment variables and restart.');
     });
-  } catch (err) {
-    console.error('Failed to start server:', err);
-    process.exit(1);
-  }
+
+  // Graceful shutdown
+  process.on('SIGTERM', () => {
+    console.log('SIGTERM received, shutting down gracefully...');
+    server.close(() => {
+      console.log('Server closed');
+      process.exit(0);
+    });
+  });
 };
 
 start();
