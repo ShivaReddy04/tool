@@ -5,16 +5,30 @@ dotenv.config();
 
 let pool: Pool | null = null;
 
-const getConfig = () => ({
-  host: process.env.DB_HOST || 'localhost',
-  port: parseInt(process.env.DB_PORT || '5432'),
-  database: process.env.DB_NAME || 'dart_db',
-  user: process.env.DB_USER || 'postgres',
-  password: process.env.DB_PASSWORD || '',
-  max: 20,
-  idleTimeoutMillis: 30000,
-  connectionTimeoutMillis: 2000,
-});
+const getConfig = () => {
+  if (process.env.DATABASE_URL) {
+    return {
+      connectionString: process.env.DATABASE_URL,
+      ssl: {
+        rejectUnauthorized: false,
+      },
+      max: 20,
+      idleTimeoutMillis: 30000,
+      connectionTimeoutMillis: 10000,
+    };
+  }
+
+  return {
+    host: process.env.DB_HOST || 'localhost',
+    port: parseInt(process.env.DB_PORT || '5432'),
+    database: process.env.DB_NAME || 'dart_db',
+    user: process.env.DB_USER || 'postgres',
+    password: process.env.DB_PASSWORD || '',
+    max: 20,
+    idleTimeoutMillis: 30000,
+    connectionTimeoutMillis: 10000,
+  };
+};
 
 const sleep = (ms: number) => new Promise((res) => setTimeout(res, ms));
 
@@ -35,7 +49,7 @@ async function createPoolWithRetry(attempts = 5) {
     } catch (err) {
       lastErr = err;
       const backoff = Math.pow(2, i) * 1000;
-      console.warn(`Postgres connect attempt ${i + 1} failed. Retrying in ${backoff}ms`);
+      console.warn(`Postgres connect attempt ${i + 1}/${attempts} failed. Retrying in ${backoff}ms...`);
       await sleep(backoff);
     }
   }
