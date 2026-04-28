@@ -37,6 +37,9 @@ async function pgConnect(config: ConnectionConfig) {
     password: config.password,
     max: 2,
     connectionTimeoutMillis: 5000,
+    ssl: {
+      rejectUnauthorized: false,
+    },
   });
 
   return pool;
