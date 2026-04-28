@@ -1,5 +1,5 @@
 import { Request, Response } from 'express';
-import { createSubmission, getPendingSubmissions, reviewSubmission } from '../models/submission.model';
+import { createSubmission, getPendingSubmissions, reviewSubmission, SubmissionPayload } from '../models/submission.model';
 import { updateTableStatus, getTableDefinitionDetails, getTableDefinitionByKey, createOrUpdateTableDefinition } from '../models/table_definition.model';
 import { getColumnDefinitionsByTableId } from '../models/column_definition.model';
 import { getClusterConnectionConfig } from '../models/cluster.model';
@@ -36,7 +36,15 @@ export const submitTableForReview = async (req: Request, res: Response): Promise
         }
 
         await updateTableStatus(tableDefinitionId, 'submitted');
-        const submission = await createSubmission(tableDefinitionId, submittedBy);
+
+        const tableSnapshot = await getTableDefinitionDetails(tableDefinitionId);
+        const columnsSnapshot = await getColumnDefinitionsByTableId(tableDefinitionId);
+        const payload: SubmissionPayload = {
+            table: tableSnapshot,
+            columns: columnsSnapshot,
+        };
+
+        const submission = await createSubmission(tableDefinitionId, submittedBy, payload);
 
         await createAuditLog({
             action: 'SUBMIT_FOR_REVIEW',
@@ -46,7 +54,7 @@ export const submitTableForReview = async (req: Request, res: Response): Promise
             metadata: { table_id: tableDefinitionId }
         });
 
-        const tableDef = await getTableDefinitionDetails(tableId);
+        const tableDef = tableSnapshot;
         broadcastSubmissionEvent('SUBMITTED', {
             submittedBy,
             tableName: tableDef?.table_name || tableId,
@@ -63,7 +71,24 @@ export const submitTableForReview = async (req: Request, res: Response): Promise
 export const listPendingSubmissions = async (req: Request, res: Response): Promise<void> => {
     try {
         const submissions = await getPendingSubmissions();
-        res.status(200).json(submissions);
+        const enriched = submissions.map((s: any) => {
+            const submitterName = s.submitter_first_name
+                ? `${s.submitter_first_name} ${s.submitter_last_name || ''}`.trim()
+                : (s.submitter_email || s.submitted_by);
+            return {
+                id: s.id,
+                table_id: s.table_id,
+                submitted_by: s.submitted_by,
+                submitter_name: submitterName,
+                table_name: s.table_name,
+                schema_name: s.schema_name,
+                database_name: s.database_name,
+                status: s.status,
+                submitted_at: s.submitted_at,
+                payload: s.payload,
+            };
+        });
+        res.status(200).json(enriched);
     } catch (err) {
         console.error('List pending submissions error:', err);
         res.status(500).json({ error: 'Internal server error' });

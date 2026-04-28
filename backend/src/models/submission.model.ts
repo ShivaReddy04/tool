@@ -1,5 +1,10 @@
 import { query } from '../config/db';
 
+export interface SubmissionPayload {
+    table: any;
+    columns: any[];
+}
+
 export interface Submission {
     id: string;
     table_id: string;
@@ -9,18 +14,31 @@ export interface Submission {
     rejection_reason?: string;
     submitted_at: Date;
     reviewed_at?: Date;
+    payload?: SubmissionPayload | null;
 }
 
-export const createSubmission = async (tableId: string, submittedBy: string): Promise<Submission> => {
+export const createSubmission = async (
+    tableId: string,
+    submittedBy: string,
+    payload?: SubmissionPayload
+): Promise<Submission> => {
     const result = await query(
-        `INSERT INTO submissions (table_id, submitted_by, status) VALUES ($1, $2, 'pending') RETURNING *`,
-        [tableId, submittedBy]
+        `INSERT INTO submissions (table_id, submitted_by, status, payload) VALUES ($1, $2, 'pending', $3) RETURNING *`,
+        [tableId, submittedBy, payload ? JSON.stringify(payload) : null]
     );
     return result.rows[0];
 };
 
-export const getPendingSubmissions = async (): Promise<Submission[]> => {
-    const result = await query(`SELECT * FROM submissions WHERE status = 'pending' ORDER BY submitted_at ASC`);
+export const getPendingSubmissions = async (): Promise<any[]> => {
+    const result = await query(
+        `SELECT s.*, td.table_name, td.schema_name, td.database_name,
+                u.first_name AS submitter_first_name, u.last_name AS submitter_last_name, u.email AS submitter_email
+         FROM submissions s
+         JOIN table_definitions td ON s.table_id = td.id
+         LEFT JOIN users u ON s.submitted_by = u.id
+         WHERE s.status = 'pending'
+         ORDER BY s.submitted_at ASC`
+    );
     return result.rows;
 };
 

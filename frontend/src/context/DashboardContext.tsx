@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useCallback, useEffect } from "react";
 import api from "../api/client";
+import { useAuth } from "./AuthContext";
 import type {
   Cluster,
   Schema,
@@ -115,10 +116,58 @@ function persistState(state: Record<string, unknown>) {
   } catch { }
 }
 
+function pendingSubmissionToNotification(s: any): Notification {
+  const p = s.payload || {};
+  const tablePayload = p.table || {};
+  const columnsPayload: any[] = Array.isArray(p.columns) ? p.columns : [];
+
+  const tableDefinition: TableDefinition = {
+    id: tablePayload.id,
+    tableName: tablePayload.table_name || s.table_name || "",
+    entityLogicalName: tablePayload.entity_logical_name || "",
+    distributionStyle: tablePayload.distribution_style || "AUTO",
+    keys: tablePayload.keys || "",
+    verticalName: tablePayload.vertical_name || "",
+    columns: [],
+  };
+
+  const columns: ColumnDefinition[] = columnsPayload.map((c: any) => ({
+    id: c.id,
+    columnName: c.column_name,
+    dataType: c.data_type,
+    isNullable: c.is_nullable,
+    isPrimaryKey: c.is_primary_key,
+    dataClassification: c.data_classification,
+    dataDomain: c.data_domain || "",
+    attributeDefinition: c.attribute_definition || "",
+    defaultValue: c.default_value || "",
+    action: c.action,
+  }));
+
+  const submitterName = s.submitter_name || "Developer";
+  const tableName = s.table_name || tableDefinition.tableName;
+
+  return {
+    id: `srv-submission-${s.id}`,
+    type: "submission",
+    title: "Table Submitted for Review",
+    message: `${submitterName} submitted "${tableName}" for review.`,
+    tableName,
+    submittedBy: submitterName,
+    timestamp: s.submitted_at,
+    isRead: false,
+    targetRole: "architect",
+    submissionId: s.id,
+    tableDefinition,
+    columns,
+  };
+}
+
 export const DashboardProvider: React.FC<{ children: React.ReactNode }> = ({
   children,
 }) => {
   const persisted = loadPersistedState();
+  const { user } = useAuth();
 
   // Environment state — seeded with mock data
   const [clusters, setClusters] = useState<Cluster[]>([]);
@@ -207,6 +256,35 @@ export const DashboardProvider: React.FC<{ children: React.ReactNode }> = ({
   const addNotification = useCallback((n: Notification) => {
     setNotifications((prev) => [n, ...prev]);
   }, []);
+
+  // Pull pending submissions from the server and merge as architect-targeted notifications.
+  // Replaces existing server-sourced submission notifications (id starts with "srv-submission-")
+  // so reviewed/removed items disappear, but preserves locally-created approval/rejection notifications.
+  const refreshPendingSubmissions = useCallback(async () => {
+    try {
+      const res = await api.get("/submissions/pending");
+      const serverNotifs: Notification[] = (res.data || []).map(pendingSubmissionToNotification);
+      setNotifications((prev) => {
+        const localOnly = prev.filter((n) => !n.id.startsWith("srv-submission-"));
+        const seenSubmissionIds = new Set(serverNotifs.map((n) => n.submissionId));
+        // Drop any local "submission" notifications whose submission was reviewed (no longer pending)
+        const localFiltered = localOnly.filter((n) => {
+          if (n.type !== "submission" || !n.submissionId) return true;
+          return seenSubmissionIds.has(n.submissionId);
+        });
+        return [...serverNotifs, ...localFiltered];
+      });
+    } catch (err) {
+      console.error("Failed to load pending submissions:", err);
+    }
+  }, []);
+
+  // Hydrate architect's bell from server on mount and on role change
+  useEffect(() => {
+    if (user?.role === "architect") {
+      refreshPendingSubmissions();
+    }
+  }, [user?.role, refreshPendingSubmissions]);
 
   const markNotificationRead = useCallback((id: string) => {
     setNotifications((prev) =>
@@ -372,12 +450,13 @@ export const DashboardProvider: React.FC<{ children: React.ReactNode }> = ({
         setIsReviewDrawerOpen(false);
         setReviewingNotification(null);
         addToast("success", `"${reviewingNotification.tableName}" approved — data model updated.`);
+        refreshPendingSubmissions();
       } catch (err) {
         console.error(err);
         addToast("error", "Failed to push approval database changes.");
       }
     },
-    [reviewingNotification, markNotificationRead, addNotification, addToast]
+    [reviewingNotification, markNotificationRead, addNotification, addToast, refreshPendingSubmissions]
   );
 
   const rejectSubmission = useCallback(
@@ -404,12 +483,13 @@ export const DashboardProvider: React.FC<{ children: React.ReactNode }> = ({
         setIsReviewDrawerOpen(false);
         setReviewingNotification(null);
         addToast("info", `"${reviewingNotification.tableName}" has been rejected.`);
+        refreshPendingSubmissions();
       } catch (err) {
         console.error(err);
         addToast("error", "Failed to record rejection.");
       }
     },
-    [reviewingNotification, markNotificationRead, addNotification, addToast]
+    [reviewingNotification, markNotificationRead, addNotification, addToast, refreshPendingSubmissions]
   );
 
   // Create table action
