@@ -18,7 +18,10 @@ const app = express();
 
 // Middleware
 app.use(cors({
-  origin: process.env.FRONTEND_URL || 'http://localhost:3000',
+  origin: [
+    'http://localhost:3000',
+    'https://tool-1-9t7t.onrender.com'
+  ],
   credentials: true,
 }));
 app.use(express.json());
