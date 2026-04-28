@@ -10,9 +10,16 @@ import { buildCreateTableDDL, buildAlterDDL, hasPendingChanges, DbType, DDLColum
 
 export const submitTableForReview = async (req: Request, res: Response): Promise<void> => {
     try {
-        const { tableId, submittedBy } = req.body;
-        if (!tableId || !submittedBy) {
-            res.status(400).json({ error: 'tableId and submittedBy are required' });
+        const { tableId } = req.body;
+        if (!tableId) {
+            res.status(400).json({ error: 'tableId is required' });
+            return;
+        }
+
+        // submissions.submitted_by is a uuid FK; trust the JWT, not the body.
+        const submittedBy = req.user?.userId;
+        if (!submittedBy) {
+            res.status(401).json({ error: 'Not authenticated' });
             return;
         }
 
@@ -99,21 +106,29 @@ export const listPendingSubmissions = async (req: Request, res: Response): Promi
 export const handleReviewAndSync = async (req: Request, res: Response): Promise<void> => {
     try {
         const id = req.params.id as string;
-        const { reviewedBy, status, rejectionReason } = req.body;
+        const { reviewedBy: reviewedByName, status, rejectionReason } = req.body;
 
-        if (!reviewedBy || !['approved', 'rejected'].includes(status)) {
-            res.status(400).json({ error: 'Valid reviewedBy and status (approved/rejected) are required' });
+        if (!['approved', 'rejected'].includes(status)) {
+            res.status(400).json({ error: 'Valid status (approved/rejected) is required' });
             return;
         }
 
-        const reviewedSubmission = await reviewSubmission(id, reviewedBy, status, rejectionReason);
+        // submissions.reviewed_by is a uuid FK to users(id) — use the authenticated
+        // user's UUID, not whatever display name the frontend sent in the body.
+        const reviewerId = req.user?.userId;
+        if (!reviewerId) {
+            res.status(401).json({ error: 'Not authenticated' });
+            return;
+        }
+
+        const reviewedSubmission = await reviewSubmission(id, reviewerId, status, rejectionReason);
         await updateTableStatus(reviewedSubmission.table_id, status);
 
         await createAuditLog({
             action: status === 'approved' ? 'APPROVE_SUBMISSION' : 'REJECT_SUBMISSION',
             entity_type: 'submission',
             entity_id: id,
-            user_name: reviewedBy,
+            user_name: reviewedByName || reviewerId,
             metadata: { table_id: reviewedSubmission.table_id, reason: rejectionReason }
         });
 
@@ -191,7 +206,7 @@ export const handleReviewAndSync = async (req: Request, res: Response): Promise<
         const tableDef = await getTableDefinitionDetails(reviewedSubmission.table_id);
 
         broadcastSubmissionEvent(status === 'approved' ? 'APPROVED' : 'REJECTED', {
-            submittedBy: reviewedBy,
+            submittedBy: reviewedByName || reviewerId,
             tableName: tableDef?.table_name || reviewedSubmission.table_id,
             linkId: id,
             reason: rejectionReason
