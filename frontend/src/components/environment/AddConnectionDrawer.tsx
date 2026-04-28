@@ -32,7 +32,7 @@ export const AddConnectionDrawer: React.FC<AddConnectionDrawerProps> = ({
   const [dbType, setDbType] = useState<DbType>("postgresql");
   const [host, setHost] = useState("localhost");
   const [port, setPort] = useState(5432);
-  const [databaseName, setDatabaseName] = useState("");
+  const [database, setDatabase] = useState("");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
@@ -52,7 +52,7 @@ export const AddConnectionDrawer: React.FC<AddConnectionDrawerProps> = ({
     setTestResult(null);
     setError("");
     try {
-      const result = await testConnection({ dbType, host, port, databaseName, username, password });
+      const result = await testConnection({ dbType, host, port, database, username, password });
       setTestResult(result);
     } catch (err: any) {
       setTestResult({ success: false, message: err.message || "Connection failed" });
@@ -62,13 +62,13 @@ export const AddConnectionDrawer: React.FC<AddConnectionDrawerProps> = ({
 
   const handleSave = async () => {
     setError("");
-    if (!name.trim() || !host.trim() || !databaseName.trim() || !username.trim() || !password) {
+    if (!name.trim() || !host.trim() || !database.trim() || !username.trim() || !password) {
       setError("All fields are required.");
       return;
     }
     setSaving(true);
     try {
-      await addConnection({ name: name.trim(), dbType, host: host.trim(), port, databaseName: databaseName.trim(), username: username.trim(), password });
+      await addConnection({ name: name.trim(), dbType, host: host.trim(), port, database: database.trim(), username: username.trim(), password });
       resetForm();
       onAdded();
       onClose();
@@ -83,7 +83,7 @@ export const AddConnectionDrawer: React.FC<AddConnectionDrawerProps> = ({
     setDbType("postgresql");
     setHost("localhost");
     setPort(5432);
-    setDatabaseName("");
+    setDatabase("");
     setUsername("");
     setPassword("");
     setError("");
@@ -101,7 +101,7 @@ export const AddConnectionDrawer: React.FC<AddConnectionDrawerProps> = ({
           <Button variant="secondary" onClick={() => { resetForm(); onClose(); }}>
             Cancel
           </Button>
-          <Button variant="outline" onClick={handleTest} disabled={testing || !host || !databaseName || !username || !password}>
+          <Button variant="outline" onClick={handleTest} disabled={testing || !host || !database || !username || !password}>
             {testing ? "Testing..." : "Test Connection"}
           </Button>
           <Button variant="primary" onClick={handleSave} disabled={saving}>
@@ -164,8 +164,8 @@ export const AddConnectionDrawer: React.FC<AddConnectionDrawerProps> = ({
 
         <TextInput
           label="Database Name"
-          value={databaseName}
-          onChange={(e) => setDatabaseName(e.target.value)}
+          value={database}
+          onChange={(e) => setDatabase(e.target.value)}
           placeholder="my_database"
           required
         />

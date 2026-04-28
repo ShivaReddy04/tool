@@ -10,22 +10,21 @@ declare global {
   }
 }
 
-export const authenticate = (req: Request, res: Response, next: NextFunction): void => {
+export const authenticate = (req: any, res: any, next: any) => {
   const authHeader = req.headers.authorization;
 
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    res.status(401).json({ error: 'Access token required' });
-    return;
+  if (!authHeader) {
+    return res.status(401).json({ error: "No token" });
   }
 
-  const token = authHeader.split(' ')[1];
+  const token = authHeader.split(" ")[1];
 
   try {
-    const payload = verifyAccessToken(token);
-    req.user = payload;
+    const decoded = verifyAccessToken(token);
+    req.user = decoded;
     next();
-  } catch (err) {
-    res.status(401).json({ error: 'Invalid or expired access token' });
+  } catch {
+    return res.status(401).json({ error: "Invalid token" });
   }
 };
 

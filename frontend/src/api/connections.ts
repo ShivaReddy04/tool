@@ -11,7 +11,7 @@ export const addConnection = async (conn: {
   dbType: string;
   host: string;
   port: number;
-  databaseName: string;
+  database: string;
   username: string;
   password: string;
 }): Promise<DbConnection> => {
@@ -23,7 +23,7 @@ export const testConnection = async (conn: {
   dbType: string;
   host: string;
   port: number;
-  databaseName: string;
+  database: string;
   username: string;
   password: string;
 }): Promise<{ success: boolean; message: string }> => {

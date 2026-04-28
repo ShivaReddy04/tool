@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { authenticate } from '../middleware/auth';
 import {
   create,
+  createCluster,
   list,
   getById,
   update,
@@ -22,7 +23,7 @@ const router = Router();
 router.use(authenticate);
 
 // CRUD
-router.post('/', create);
+router.post('/', createCluster);
 router.get('/', list);
 router.get('/:id', getById);
 router.put('/:id', update);

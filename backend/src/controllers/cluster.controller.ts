@@ -1,6 +1,8 @@
 import { Request, Response } from 'express';
+import { query } from '../config/db';
+import { encrypt } from '../utils/encryption';
 import {
-  createCluster,
+  createCluster as createClusterModel,
   getAllClusters,
   getClusterById,
   updateCluster,
@@ -27,7 +29,7 @@ export const create = async (req: Request, res: Response): Promise<void> => {
       return;
     }
 
-    const cluster = await createCluster(
+    const cluster = await createClusterModel(
       name, dbType, host, Number(port), databaseName, username, password, req.user!.userId
     );
 
@@ -145,9 +147,10 @@ export const testById = async (req: Request, res: Response): Promise<void> => {
 // POST /api/clusters/test (test without saving)
 export const testDirect = async (req: Request, res: Response): Promise<void> => {
   try {
-    const { dbType, host, port, databaseName, username, password } = req.body;
+    const { dbType, host, port, databaseName, database, username, password } = req.body;
+    const db = database || databaseName;
 
-    if (!dbType || !host || !port || !databaseName || !username || !password) {
+    if (!dbType || !host || !port || !db || !username || !password) {
       res.status(400).json({ error: 'All connection fields are required' });
       return;
     }
@@ -159,7 +162,7 @@ export const testDirect = async (req: Request, res: Response): Promise<void> => 
 
     const connector = getConnector(dbType);
     const success = await connector.test({
-      host, port: Number(port), database: databaseName, user: username, password,
+      host, port: Number(port), database: db, user: username, password,
     });
 
     res.json({ success, message: success ? 'Connection successful' : 'Connection failed' });
@@ -359,5 +362,51 @@ export const updateTableData = async (req: Request, res: Response): Promise<void
   } catch (err: any) {
     console.error('Update table data error:', err);
     res.status(500).json({ error: err.message || 'Failed to update table data' });
+  }
+};
+
+export const createCluster = async (req: Request, res: Response) => {
+  try {
+    const {
+      name,
+      dbType,
+      host,
+      port,
+      database,
+      username,
+      password,
+    } = req.body;
+
+    const userId = (req as any).user?.userId || (req as any).user?.id;
+
+    if (!userId) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    const passwordEncrypted = encrypt(password);
+
+    const result = await query(
+      `INSERT INTO connections 
+      (name, db_type, host, port, database_name, username, password_encrypted, created_by)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+      RETURNING *`,
+      [name, dbType, host, port, database, username, passwordEncrypted, userId]
+    );
+
+    const row = result.rows[0];
+    res.status(201).json({
+      id: row.id,
+      name: row.name,
+      dbType: row.db_type,
+      host: row.host,
+      port: row.port,
+      databaseName: row.database_name,
+      status: row.status,
+      createdBy: row.created_by,
+      createdAt: row.created_at,
+    });
+  } catch (err: any) {
+    console.error("Cluster Error:", err);
+    res.status(500).json({ error: err.message });
   }
 };

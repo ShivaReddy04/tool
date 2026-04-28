@@ -21,18 +21,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const isAuthenticated = user !== null;
 
-  // Attach token to api client whenever it changes
-  useEffect(() => {
-    const interceptorId = api.interceptors.request.use((config) => {
-      if (accessToken) {
-        config.headers.Authorization = `Bearer ${accessToken}`;
-      }
-      return config;
-    });
-    return () => {
-      api.interceptors.request.eject(interceptorId);
-    };
-  }, [accessToken]);
 
   // Restore session on app load via refresh token
   useEffect(() => {

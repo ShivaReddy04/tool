@@ -10,6 +10,8 @@ import {
   deleteAllUserRefreshTokens,
 } from '../models/user.model';
 import { generateTokens, verifyRefreshToken, hashToken, getRefreshTokenExpiry } from '../utils/jwt';
+import { query } from '../config/db';
+import { encrypt } from '../utils/encryption';
 import { TokenPayload } from '../types';
 
 export const signup = async (req: Request, res: Response): Promise<void> => {
@@ -291,3 +293,49 @@ const loginWithRole = (expectedRole: string) => {
 
 export const loginDeveloper = loginWithRole('DEVELOPER');
 export const loginArchitect = loginWithRole('ARCHITECT');
+
+export const createCluster = async (req: Request, res: Response) => {
+  try {
+    const {
+      name,
+      dbType,
+      host,
+      port,
+      database,
+      username,
+      password,
+    } = req.body;
+
+    const userId = (req as any).user?.id || (req as any).user?.userId; // from JWT middleware
+
+    if (!userId) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    const passwordEncrypted = encrypt(password);
+
+    const result = await query(
+      `INSERT INTO connections 
+      (name, db_type, host, port, database_name, username, password_encrypted, created_by)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+      RETURNING *`,
+      [name, dbType, host, port, database, username, passwordEncrypted, userId]
+    );
+
+    const row = result.rows[0];
+    res.status(201).json({
+      id: row.id,
+      name: row.name,
+      dbType: row.db_type,
+      host: row.host,
+      port: row.port,
+      databaseName: row.database_name,
+      status: row.status,
+      createdBy: row.created_by,
+      createdAt: row.created_at,
+    });
+  } catch (err: any) {
+    console.error("Cluster Error:", err);
+    res.status(500).json({ error: err.message });
+  }
+};
