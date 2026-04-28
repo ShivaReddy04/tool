@@ -38,6 +38,14 @@ export const signup = async (req: Request, res: Response): Promise<void> => {
     const refreshTokenHash = hashToken(tokens.refreshToken);
     await saveRefreshToken(user.id, refreshTokenHash, getRefreshTokenExpiry());
 
+    // Set refresh token as secure httpOnly cookie
+    res.cookie('refreshToken', tokens.refreshToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+    });
+
     res.status(201).json({
       token: tokens.accessToken,
       user: {
@@ -47,7 +55,7 @@ export const signup = async (req: Request, res: Response): Promise<void> => {
         lastName: user.last_name,
         role: user.role,
       },
-      ...tokens,
+      refreshToken: tokens.refreshToken,
     });
   } catch (err) {
     console.error('Signup error:', err);
@@ -88,6 +96,14 @@ export const login = async (req: Request, res: Response): Promise<void> => {
     const refreshTokenHash = hashToken(tokens.refreshToken);
     await saveRefreshToken(user.id, refreshTokenHash, getRefreshTokenExpiry());
 
+    // Set refresh token as secure httpOnly cookie
+    res.cookie('refreshToken', tokens.refreshToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+    });
+
     res.json({
       token: tokens.accessToken,
       user: {
@@ -97,7 +113,7 @@ export const login = async (req: Request, res: Response): Promise<void> => {
         lastName: user.last_name,
         role: user.role,
       },
-      ...tokens,
+      refreshToken: tokens.refreshToken,
     });
   } catch (err) {
     console.error('Login error:', err);
@@ -108,7 +124,7 @@ export const login = async (req: Request, res: Response): Promise<void> => {
 
 export const refreshToken = async (req: Request, res: Response): Promise<void> => {
   try {
-    const { refreshToken } = req.body;
+    const refreshToken = req.cookies.refreshToken || req.body?.refreshToken;
 
     if (!refreshToken) {
       res.status(400).json({ error: 'Refresh token is required' });
@@ -141,7 +157,8 @@ export const refreshToken = async (req: Request, res: Response): Promise<void> =
     res.json(tokens);
   } catch (err) {
     console.error('Refresh token error:', err);
-    res.status(401).json({ error: 'Invalid refresh token' });
+    const errorMessage = err instanceof Error ? err.message : 'Invalid refresh token';
+    res.status(401).json({ error: errorMessage });
   }
 };
 
