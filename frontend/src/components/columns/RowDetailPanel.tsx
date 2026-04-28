@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useDashboard } from "../../context/DashboardContext";
 import { Card, TextInput, Button } from "../common";
 
@@ -6,12 +6,21 @@ export const RowDetailPanel: React.FC = () => {
   const dashboard = useDashboard() as any;
   const { selectedRowData, setSelectedRowData, selectedTableId, tableDefinition, addToast, refreshTable, setRightPanelMode, setHasUnsavedChanges } = dashboard;
 
+  // Initialize hooks at top level (required by React Rules of Hooks)
+  const [updatedRow, setUpdatedRow] = useState<any>({});
+  const [saving, setSaving] = useState(false);
+
+  // Update state when selectedRowData changes
+  useEffect(() => {
+    if (selectedRowData) {
+      setUpdatedRow({ ...selectedRowData });
+    }
+  }, [selectedRowData]);
+
+  // Early return after all hooks
   if (!selectedRowData) return null;
 
   const originalRow = selectedRowData;
-
-  const [updatedRow, setUpdatedRow] = useState<any>({ ...originalRow });
-  const [saving, setSaving] = useState(false);
 
   // Determine connection metadata
   let connId: string | null = null;
