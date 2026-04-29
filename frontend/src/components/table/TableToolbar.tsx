@@ -1,10 +1,12 @@
 import React from "react";
+import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext";
 import { useDashboard } from "../../context/DashboardContext";
 import { Select, Button } from "../common";
 
 export const TableToolbar: React.FC = () => {
   const { hasRole } = useAuth();
+  const navigate = useNavigate();
   const {
     tables,
     selectedTableId,
@@ -24,6 +26,7 @@ export const TableToolbar: React.FC = () => {
     setSelectedTableId(value);
     if (value) {
       setCurrentStep(3);
+      navigate(`/dashboard/tables/${encodeURIComponent(value)}`);
     }
   };
 

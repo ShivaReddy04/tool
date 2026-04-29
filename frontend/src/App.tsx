@@ -1,9 +1,10 @@
 import React from "react";
-import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate, Outlet } from "react-router-dom";
 import { AuthProvider } from "./context/AuthContext";
 import { DashboardProvider } from "./context/DashboardContext";
 import { ProtectedRoute } from "./components/layout/ProtectedRoute";
 import { DeveloperDashboard } from "./pages/DeveloperDashboard";
+import { TableDetailsPage } from "./pages/TableDetailsPage";
 import { LoginPage } from "./pages/LoginPage";
 import { SignupPage } from "./pages/SignupPage";
 import { UnauthorizedPage } from "./pages/UnauthorizedPage";
@@ -23,11 +24,14 @@ const App: React.FC = () => {
             element={
               <ProtectedRoute allowedRoles={["developer", "architect"]}>
                 <DashboardProvider>
-                  <DeveloperDashboard />
+                  <Outlet />
                 </DashboardProvider>
               </ProtectedRoute>
             }
-          />
+          >
+            <Route index element={<DeveloperDashboard />} />
+            <Route path="tables/:tableId" element={<TableDetailsPage />} />
+          </Route>
 
           <Route
             path="/architect"
