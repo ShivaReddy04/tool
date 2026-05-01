@@ -9,9 +9,17 @@ import { findUserById } from '../models/user.model';
 import { broadcastSubmissionEvent } from '../utils/webhook';
 import { buildCreateTableDDL, buildAlterDDL, hasPendingChanges, DbType, DDLColumn } from '../utils/ddl_generator';
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 export const submitTableForReview = async (req: Request, res: Response): Promise<void> => {
     try {
         const { tableId, assignedArchitectId } = req.body;
+        console.log('[submission] incoming POST /submissions', {
+            tableId,
+            assignedArchitectId,
+            submittedBy: req.user?.userId,
+        });
+
         if (!tableId) {
             res.status(400).json({ error: 'tableId is required' });
             return;
@@ -30,6 +38,12 @@ export const submitTableForReview = async (req: Request, res: Response): Promise
         // by handing us an arbitrary user id.
         if (!assignedArchitectId || typeof assignedArchitectId !== 'string') {
             res.status(400).json({ error: 'assignedArchitectId is required' });
+            return;
+        }
+        // Reject non-UUID strings up-front so we return a clean 400 rather than
+        // letting Postgres throw 22P02 inside findUserById and bubble out as 500.
+        if (!UUID_RE.test(assignedArchitectId)) {
+            res.status(400).json({ error: 'assignedArchitectId must be a UUID' });
             return;
         }
         const architect = await findUserById(assignedArchitectId);
@@ -60,11 +74,21 @@ export const submitTableForReview = async (req: Request, res: Response): Promise
                 });
                 tableDefinitionId = newTableDef.id;
             }
+        } else if (!UUID_RE.test(tableDefinitionId)) {
+            // Catches stale frontend ids like "tbl-new-..." that weren't replaced
+            // after saveChanges. Returns 400 instead of letting the FK insert blow up.
+            res.status(400).json({ error: 'tableId must be a saved table UUID or a physical key (conn::db::schema::table)' });
+            return;
+        }
+
+        const tableSnapshot = await getTableDefinitionDetails(tableDefinitionId);
+        if (!tableSnapshot) {
+            res.status(404).json({ error: 'Table definition not found for the provided tableId' });
+            return;
         }
 
         await updateTableStatus(tableDefinitionId, 'submitted');
 
-        const tableSnapshot = await getTableDefinitionDetails(tableDefinitionId);
         const columnsSnapshot = await getColumnDefinitionsByTableId(tableDefinitionId);
         const payload: SubmissionPayload = {
             table: tableSnapshot,
@@ -85,17 +109,46 @@ export const submitTableForReview = async (req: Request, res: Response): Promise
             }
         });
 
-        const tableDef = tableSnapshot;
         broadcastSubmissionEvent('SUBMITTED', {
             submittedBy,
-            tableName: tableDef?.table_name || tableId,
+            tableName: tableSnapshot.table_name || tableId,
             linkId: submission.id
-        }).catch(e => console.error("Webhook broadcast failed softly:", e));
+        }).catch(e => console.error('Webhook broadcast failed softly:', e));
 
         res.status(201).json(submission);
-    } catch (err) {
-        console.error('Submit review error:', err);
-        res.status(500).json({ error: 'Internal server error' });
+    } catch (err: any) {
+        // Postgres error codes: 23503 = FK violation, 23502 = NOT NULL, 22P02 = bad input syntax
+        const pgCode: string | undefined = err?.code;
+        console.error('[submission] submitTableForReview failed', {
+            code: pgCode,
+            message: err?.message,
+            detail: err?.detail,
+            constraint: err?.constraint,
+            stack: err?.stack,
+        });
+
+        if (pgCode === '23503') {
+            res.status(400).json({
+                error: 'Referenced record does not exist',
+                detail: err.detail,
+                constraint: err.constraint,
+            });
+            return;
+        }
+        if (pgCode === '23502') {
+            res.status(400).json({ error: 'Missing required field', column: err.column });
+            return;
+        }
+        if (pgCode === '22P02') {
+            res.status(400).json({ error: 'Invalid value format', detail: err.detail });
+            return;
+        }
+
+        const isProd = process.env.NODE_ENV === 'production';
+        res.status(500).json({
+            error: 'Failed to submit table for review',
+            ...(isProd ? {} : { message: err?.message, code: pgCode }),
+        });
     }
 };
 
