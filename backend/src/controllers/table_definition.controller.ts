@@ -8,12 +8,21 @@ import { createAuditLog } from '../models/audit_log.model';
 export const saveTableDefinition = async (req: Request, res: Response): Promise<void> => {
     try {
         const { table, columns } = req.body;
+        console.log('[table-def] incoming POST /table-definitions', {
+            tableId: table?.id,
+            connection_id: table?.connection_id,
+            schema_name: table?.schema_name,
+            table_name: table?.table_name,
+            status: table?.status,
+            columnCount: Array.isArray(columns) ? columns.length : 0,
+        });
+
         if (!table || !table.connection_id || !table.database_name || !table.schema_name || !table.table_name) {
             res.status(400).json({ error: 'Required table definition parameters missing' });
             return;
         }
 
-        // Save Table 
+        // Save Table
         const savedTable = await createOrUpdateTableDefinition(table);
 
         // Save Columns
@@ -32,9 +41,49 @@ export const saveTableDefinition = async (req: Request, res: Response): Promise<
         });
 
         res.status(200).json({ table: savedTable, columns: savedColumns });
-    } catch (err) {
-        console.error('Save table definition error:', err);
-        res.status(500).json({ error: 'Internal server error' });
+    } catch (err: any) {
+        const pgCode: string | undefined = err?.code;
+        console.error('[table-def] saveTableDefinition failed', {
+            code: pgCode,
+            message: err?.message,
+            detail: err?.detail,
+            constraint: err?.constraint,
+            column: err?.column,
+            stack: err?.stack,
+        });
+
+        // 23514 = CHECK violation, 23503 = FK violation, 23502 = NOT NULL,
+        // 23505 = unique, 22P02 = bad input syntax, 42703 = undefined column.
+        if (pgCode === '23514') {
+            res.status(400).json({ error: 'Value violates a CHECK constraint', constraint: err.constraint, detail: err.detail });
+            return;
+        }
+        if (pgCode === '23503') {
+            res.status(400).json({ error: 'Referenced record does not exist', constraint: err.constraint, detail: err.detail });
+            return;
+        }
+        if (pgCode === '23502') {
+            res.status(400).json({ error: 'Missing required field', column: err.column });
+            return;
+        }
+        if (pgCode === '23505') {
+            res.status(409).json({ error: 'Record already exists', constraint: err.constraint, detail: err.detail });
+            return;
+        }
+        if (pgCode === '22P02') {
+            res.status(400).json({ error: 'Invalid value format', detail: err.detail });
+            return;
+        }
+        if (pgCode === '42703') {
+            res.status(500).json({ error: 'Schema mismatch — undefined column. Run pending migrations.', detail: err.message });
+            return;
+        }
+
+        const isProd = process.env.NODE_ENV === 'production';
+        res.status(500).json({
+            error: 'Failed to save table definition',
+            ...(isProd ? {} : { message: err?.message, code: pgCode }),
+        });
     }
 };
 

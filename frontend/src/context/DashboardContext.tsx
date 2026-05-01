@@ -660,7 +660,7 @@ export const DashboardProvider: React.FC<{ children: React.ReactNode }> = ({
               dataDomain: '',
               attributeDefinition: '',
               defaultValue: c.column_default || '',
-              action: 'none'
+              action: 'No Change'
             })));
             setCurrentStep(3);
             setSubmissionStatus("draft");
