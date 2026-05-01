@@ -69,7 +69,11 @@ interface DashboardContextType {
   submissionStatus: SubmissionStatus;
   saveChanges: () => void;
   dryRunValidation: () => Promise<void>;
-  submitForReview: (submittedById: string, submittedByName?: string) => void;
+  submitForReview: (
+    submittedById: string,
+    assignedArchitectId: string,
+    submittedByName?: string
+  ) => Promise<boolean>;
 
   // Review (Architect)
   reviewingNotification: Notification | null;
@@ -386,13 +390,21 @@ export const DashboardProvider: React.FC<{ children: React.ReactNode }> = ({
   }, [tableDefinition, columns, selectedClusterId, selectedDatabaseId, selectedSchemaId, addToast]);
 
   const submitForReview = useCallback(
-    async (submittedById: string, submittedByName?: string) => {
+    async (submittedById: string, assignedArchitectId: string, submittedByName?: string): Promise<boolean> => {
       if (!tableDefinition || !tableDefinition.id || tableDefinition.id.startsWith('tbl-new')) {
         addToast("error", "Please save the table before submitting.");
-        return;
+        return false;
+      }
+      if (!assignedArchitectId) {
+        addToast("error", "Please select an architect to review this submission.");
+        return false;
       }
       try {
-        const res = await api.post('/submissions', { tableId: tableDefinition.id, submittedBy: submittedById });
+        const res = await api.post('/submissions', {
+          tableId: tableDefinition.id,
+          submittedBy: submittedById,
+          assignedArchitectId,
+        });
         setSubmissionStatus("submitted");
         setHasUnsavedChanges(false);
 
@@ -414,9 +426,12 @@ export const DashboardProvider: React.FC<{ children: React.ReactNode }> = ({
         };
         addNotification(notification);
         addToast("success", `"${tableDefinition.tableName}" submitted for Architect review.`);
-      } catch (err) {
+        return true;
+      } catch (err: any) {
         console.error(err);
-        addToast("error", "Failed to submit for review.");
+        const apiMessage = err?.response?.data?.error;
+        addToast("error", apiMessage || "Failed to submit for review.");
+        return false;
       }
     },
     [tableDefinition, columns, addNotification, addToast]

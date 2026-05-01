@@ -1,7 +1,19 @@
 {
   "permissions": {
     "allow": [
-      "Bash(npx tsc *)"
+      "Bash(npx tsc *)",
+      "Read(//c/Users/panya/Desktop/dart/backend/src//**)",
+      "Read(//c/Users/panya/Desktop/dart/backend/src/routes//**)",
+      "Read(//c/Users/panya/Desktop/dart/backend/src/models//**)",
+      "Read(//c/Users/panya/Desktop/dart/backend/src/controllers//**)",
+      "Read(//c/Users/panya/Desktop/dart/backend/migrations//**)",
+      "Read(//c/Users/panya/Desktop/dart/backend/**)",
+      "Read(//c/Users/panya/Desktop/dart/frontend/src/components/table//**)",
+      "Read(//c/Users/panya/Desktop/dart/frontend/src/api//**)",
+      "Read(//c/Users/panya/Desktop/dart/frontend/src/components/common//**)",
+      "Bash(echo \"exit=$?\")",
+      "PowerShell(Set-Location \"C:\\\\Users\\\\panya\\\\Desktop\\\\dart\\\\frontend\"; npx tsc --noEmit; \"exit=$LASTEXITCODE\")",
+      "PowerShell(Set-Location \"C:\\\\Users\\\\panya\\\\Desktop\\\\dart\\\\backend\"; npx tsc --noEmit; \"exit=$LASTEXITCODE\")"
     ]
   }
 }

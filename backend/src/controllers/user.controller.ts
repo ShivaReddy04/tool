@@ -1,5 +1,5 @@
 import { Request, Response } from 'express';
-import { getAllUsers, updateUserRole, findUserById } from '../models/user.model';
+import { getAllUsers, updateUserRole, findUserById, findArchitects } from '../models/user.model';
 import { UserRole } from '../types';
 
 export const listUsers = async (req: Request, res: Response): Promise<void> => {
@@ -18,6 +18,31 @@ export const listUsers = async (req: Request, res: Response): Promise<void> => {
     );
   } catch (err) {
     console.error('List users error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+};
+
+/**
+ * List active architects, optionally filtered by a search term.
+ * Used by developers in the Submit-for-Review flow to pick a reviewer.
+ * Available to any authenticated user — selection cannot leak data
+ * since only public profile fields are returned.
+ */
+export const listArchitects = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const search = typeof req.query.search === 'string' ? req.query.search : undefined;
+    const architects = await findArchitects(search);
+    res.json(
+      architects.map((u) => ({
+        id: u.id,
+        email: u.email,
+        firstName: u.first_name,
+        lastName: u.last_name,
+        role: u.role,
+      }))
+    );
+  } catch (err) {
+    console.error('List architects error:', err);
     res.status(500).json({ error: 'Internal server error' });
   }
 };

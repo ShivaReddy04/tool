@@ -11,3 +11,4 @@ export { StepIndicator } from "./StepIndicator";
 export { ConfirmDialog } from "./ConfirmDialog";
 export { ToastContainer } from "./Toast";
 export type { ToastData } from "./Toast";
+export { ArchitectSelector } from "./ArchitectSelector";

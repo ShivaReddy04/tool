@@ -1,8 +1,9 @@
 import React, { useState } from "react";
 import { useDashboard } from "../../context/DashboardContext";
 import { useAuth } from "../../context/AuthContext";
-import { Card, Select, Button, Badge } from "../common";
+import { Card, Select, Button, Badge, Modal, ArchitectSelector } from "../common";
 import type { ColumnAction } from "../../types";
+import type { Architect } from "../../api/architects";
 
 const ACTION_OPTIONS = [
   { value: "No Change", label: "No Change" },
@@ -50,16 +51,38 @@ export const ColumnDataGrid: React.FC = () => {
   };
 
   const [submitting, setSubmitting] = useState(false);
+  const [isReviewerDialogOpen, setIsReviewerDialogOpen] = useState(false);
+  const [selectedArchitect, setSelectedArchitect] = useState<Architect | null>(null);
 
-  const handleSubmit = async () => {
+  const openReviewerDialog = () => {
     if (!hasUnsavedChanges || submissionStatus === 'submitted' || !selectedTableId) return;
+    setSelectedArchitect(null);
+    setIsReviewerDialogOpen(true);
+  };
+
+  const closeReviewerDialog = () => {
+    if (submitting) return;
+    setIsReviewerDialogOpen(false);
+    setSelectedArchitect(null);
+  };
+
+  const handleConfirmSubmit = async () => {
+    if (!selectedArchitect || submitting) return;
     setSubmitting(true);
     try {
       await saveChanges();
-      await submitForReview(user?.id ?? user?.name ?? 'Unknown', user?.name ?? user?.id ?? 'Unknown');
-      setSubmitting(false);
+      const ok = await submitForReview(
+        user?.id ?? user?.name ?? 'Unknown',
+        selectedArchitect.id,
+        user?.name ?? user?.id ?? 'Unknown'
+      );
+      if (ok) {
+        setIsReviewerDialogOpen(false);
+        setSelectedArchitect(null);
+      }
     } catch (err) {
       console.error('Submit for review failed:', err);
+    } finally {
       setSubmitting(false);
     }
   };
@@ -92,7 +115,7 @@ export const ColumnDataGrid: React.FC = () => {
           <Button
             variant="primary"
             size="sm"
-            onClick={handleSubmit}
+            onClick={openReviewerDialog}
             disabled={!hasUnsavedChanges || submissionStatus === "submitted" || submitting}
           >
             {submitting ? 'Submitting...' : 'Submit for Review'}
@@ -214,6 +237,41 @@ export const ColumnDataGrid: React.FC = () => {
           Add Column
         </Button>
       </div>
+
+      <Modal
+        isOpen={isReviewerDialogOpen}
+        onClose={closeReviewerDialog}
+        title="Submit for Architect Review"
+        size="md"
+        footer={
+          <>
+            <Button variant="secondary" onClick={closeReviewerDialog} disabled={submitting}>
+              Cancel
+            </Button>
+            <Button
+              variant="primary"
+              onClick={handleConfirmSubmit}
+              disabled={!selectedArchitect || submitting}
+            >
+              {submitting ? "Submitting..." : "Submit for Review"}
+            </Button>
+          </>
+        }
+      >
+        <div className="space-y-4">
+          <p className="text-sm text-slate-600">
+            Choose an architect to review the proposed changes. They'll be notified
+            and the submission will appear in their review queue.
+          </p>
+          <ArchitectSelector
+            label="Assign Reviewer"
+            value={selectedArchitect}
+            onChange={setSelectedArchitect}
+            required
+            autoFocus
+          />
+        </div>
+      </Modal>
     </Card>
   );
 };

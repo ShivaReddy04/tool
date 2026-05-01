@@ -1,6 +1,7 @@
 import React, { useState, useCallback } from "react";
 import { useDashboard } from "../../context/DashboardContext";
 import { Drawer, Button, TextInput, Select } from "../common";
+import { toSnakeCase, toTitleCase } from "../../utils/naming";
 import type {
   TableDefinition,
   ColumnDefinition,
@@ -68,9 +69,46 @@ export const CreateTableDrawer: React.FC = () => {
     createEmptyColumn(0),
   ]);
 
+  // Track whether the user has *directly* typed into each name field.
+  // A field becomes "touched" when the user puts non-empty content into it,
+  // and reverts to untouched when cleared. While untouched, it remains
+  // eligible for auto-generation from its paired field.
+  const [tableNameTouched, setTableNameTouched] = useState(false);
+  const [entityNameTouched, setEntityNameTouched] = useState(false);
+
   const updateFormField = (field: string, value: string) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
   };
+
+  // Bidirectional sync: editing one name field auto-fills the paired field
+  // *only* if the paired field hasn't been manually edited. This prevents
+  // overwriting user intent and avoids any circular update loops, since
+  // each handler writes to both fields in a single, terminal state update.
+  const handleTableNameChange = useCallback(
+    (raw: string) => {
+      setTableNameTouched(raw.length > 0);
+      setFormData((prev) => ({
+        ...prev,
+        tableName: raw,
+        entityLogicalName: entityNameTouched
+          ? prev.entityLogicalName
+          : toTitleCase(raw),
+      }));
+    },
+    [entityNameTouched]
+  );
+
+  const handleEntityNameChange = useCallback(
+    (raw: string) => {
+      setEntityNameTouched(raw.length > 0);
+      setFormData((prev) => ({
+        ...prev,
+        entityLogicalName: raw,
+        tableName: tableNameTouched ? prev.tableName : toSnakeCase(raw),
+      }));
+    },
+    [tableNameTouched]
+  );
 
   const addColumn = useCallback(() => {
     setNewColumns((prev) => [...prev, createEmptyColumn(prev.length)]);
@@ -99,6 +137,8 @@ export const CreateTableDrawer: React.FC = () => {
       verticalName: "",
     });
     setNewColumns([createEmptyColumn(0)]);
+    setTableNameTouched(false);
+    setEntityNameTouched(false);
   };
 
   return (
@@ -135,16 +175,14 @@ export const CreateTableDrawer: React.FC = () => {
             <TextInput
               label="Table Name"
               value={formData.tableName}
-              onChange={(e) => updateFormField("tableName", e.target.value)}
+              onChange={(e) => handleTableNameChange(e.target.value)}
               placeholder="e.g., fact_transactions"
               required
             />
             <TextInput
               label="Entity Logical Name"
               value={formData.entityLogicalName}
-              onChange={(e) =>
-                updateFormField("entityLogicalName", e.target.value)
-              }
+              onChange={(e) => handleEntityNameChange(e.target.value)}
               placeholder="e.g., Financial Transactions"
               required
             />

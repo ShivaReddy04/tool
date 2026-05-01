@@ -34,6 +34,43 @@ export const getAllUsers = async (): Promise<User[]> => {
   return result.rows;
 };
 
+/**
+ * Active architects available as reviewers, optionally filtered by a
+ * case-insensitive substring match on name or email. Sorted alphabetically
+ * by first/last name for stable autocomplete ordering.
+ */
+export const findArchitects = async (search?: string): Promise<User[]> => {
+  const term = (search ?? '').trim();
+
+  if (!term) {
+    const result = await query(
+      `SELECT id, email, first_name, last_name, role, is_active, created_at, updated_at
+       FROM users
+       WHERE role = 'architect' AND is_active = TRUE
+       ORDER BY first_name ASC, last_name ASC`
+    );
+    return result.rows;
+  }
+
+  const pattern = `%${term}%`;
+  const result = await query(
+    `SELECT id, email, first_name, last_name, role, is_active, created_at, updated_at
+     FROM users
+     WHERE role = 'architect'
+       AND is_active = TRUE
+       AND (
+         first_name ILIKE $1
+         OR last_name ILIKE $1
+         OR email ILIKE $1
+         OR (first_name || ' ' || last_name) ILIKE $1
+       )
+     ORDER BY first_name ASC, last_name ASC
+     LIMIT 50`,
+    [pattern]
+  );
+  return result.rows;
+};
+
 export const updateUserRole = async (id: string, role: UserRole): Promise<User | null> => {
   const result = await query(
     `UPDATE users SET role = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2

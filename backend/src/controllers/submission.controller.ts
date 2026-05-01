@@ -1,16 +1,17 @@
 import { Request, Response } from 'express';
-import { createSubmission, getPendingSubmissions, reviewSubmission, SubmissionPayload } from '../models/submission.model';
+import { createSubmission, getPendingSubmissions, getSubmissionById, reviewSubmission, SubmissionPayload } from '../models/submission.model';
 import { updateTableStatus, getTableDefinitionDetails, getTableDefinitionByKey, createOrUpdateTableDefinition } from '../models/table_definition.model';
 import { getColumnDefinitionsByTableId, commitColumnActions } from '../models/column_definition.model';
 import { getClusterConnectionConfig } from '../models/cluster.model';
 import { getConnector } from '../services/connector';
 import { createAuditLog } from '../models/audit_log.model';
+import { findUserById } from '../models/user.model';
 import { broadcastSubmissionEvent } from '../utils/webhook';
 import { buildCreateTableDDL, buildAlterDDL, hasPendingChanges, DbType, DDLColumn } from '../utils/ddl_generator';
 
 export const submitTableForReview = async (req: Request, res: Response): Promise<void> => {
     try {
-        const { tableId } = req.body;
+        const { tableId, assignedArchitectId } = req.body;
         if (!tableId) {
             res.status(400).json({ error: 'tableId is required' });
             return;
@@ -20,6 +21,24 @@ export const submitTableForReview = async (req: Request, res: Response): Promise
         const submittedBy = req.user?.userId;
         if (!submittedBy) {
             res.status(401).json({ error: 'Not authenticated' });
+            return;
+        }
+
+        // Reviewer assignment is mandatory and must resolve to a real architect.
+        // Frontend uses a constrained autocomplete, but never trust the client —
+        // re-validate identity AND role server-side so a developer can't escalate
+        // by handing us an arbitrary user id.
+        if (!assignedArchitectId || typeof assignedArchitectId !== 'string') {
+            res.status(400).json({ error: 'assignedArchitectId is required' });
+            return;
+        }
+        const architect = await findUserById(assignedArchitectId);
+        if (!architect) {
+            res.status(404).json({ error: 'Selected architect not found' });
+            return;
+        }
+        if ((architect.role || '').toLowerCase() !== 'architect' || architect.is_active === false) {
+            res.status(400).json({ error: 'Selected user is not an active architect' });
             return;
         }
 
@@ -52,14 +71,18 @@ export const submitTableForReview = async (req: Request, res: Response): Promise
             columns: columnsSnapshot,
         };
 
-        const submission = await createSubmission(tableDefinitionId, submittedBy, payload);
+        const submission = await createSubmission(tableDefinitionId, submittedBy, assignedArchitectId, payload);
 
         await createAuditLog({
             action: 'SUBMIT_FOR_REVIEW',
             entity_type: 'submission',
             entity_id: submission.id,
             user_name: submittedBy,
-            metadata: { table_id: tableDefinitionId }
+            metadata: {
+                table_id: tableDefinitionId,
+                assigned_architect_id: assignedArchitectId,
+                assigned_architect_email: architect.email,
+            }
         });
 
         const tableDef = tableSnapshot;
@@ -78,16 +101,27 @@ export const submitTableForReview = async (req: Request, res: Response): Promise
 
 export const listPendingSubmissions = async (req: Request, res: Response): Promise<void> => {
     try {
-        const submissions = await getPendingSubmissions();
+        // Architects only see submissions assigned to them (Jira-style "my queue").
+        // Admins see the full firehose so they can monitor or unblock.
+        const role = (req.user?.role || '').toLowerCase();
+        const scopedArchitectId = role === 'architect' ? req.user?.userId : undefined;
+
+        const submissions = await getPendingSubmissions(scopedArchitectId);
         const enriched = submissions.map((s: any) => {
             const submitterName = s.submitter_first_name
                 ? `${s.submitter_first_name} ${s.submitter_last_name || ''}`.trim()
                 : (s.submitter_email || s.submitted_by);
+            const architectName = s.architect_first_name
+                ? `${s.architect_first_name} ${s.architect_last_name || ''}`.trim()
+                : (s.architect_email || null);
             return {
                 id: s.id,
                 table_id: s.table_id,
                 submitted_by: s.submitted_by,
                 submitter_name: submitterName,
+                assigned_architect_id: s.assigned_architect_id,
+                assigned_architect_name: architectName,
+                assigned_architect_email: s.architect_email,
                 table_name: s.table_name,
                 schema_name: s.schema_name,
                 database_name: s.database_name,
@@ -119,6 +153,22 @@ export const handleReviewAndSync = async (req: Request, res: Response): Promise<
         if (!reviewerId) {
             res.status(401).json({ error: 'Not authenticated' });
             return;
+        }
+
+        // Architects can only act on submissions assigned to them. Admins
+        // are still allowed to act on anything (e.g., to unblock when the
+        // assigned architect is OOO).
+        const role = (req.user?.role || '').toLowerCase();
+        if (role === 'architect') {
+            const existing = await getSubmissionById(id);
+            if (!existing) {
+                res.status(404).json({ error: 'Submission not found' });
+                return;
+            }
+            if (existing.assigned_architect_id !== reviewerId) {
+                res.status(403).json({ error: 'This submission is assigned to a different architect' });
+                return;
+            }
         }
 
         const reviewedSubmission = await reviewSubmission(id, reviewerId, status, rejectionReason);
