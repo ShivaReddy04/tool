@@ -45,6 +45,7 @@ interface DashboardContextType {
   setColumns: (columns: ColumnDefinition[]) => void;
   setSelectedColumnId: (id: string) => void;
   updateColumn: (id: string, updates: Partial<ColumnDefinition>) => void;
+  addColumn: () => void;
 
   // UI State
   steps: Step[];
@@ -735,6 +736,26 @@ export const DashboardProvider: React.FC<{ children: React.ReactNode }> = ({
     []
   );
 
+  const addColumn = useCallback(() => {
+    const newId = `new-col-${Date.now()}`;
+    const newColumn: ColumnDefinition = {
+      id: newId,
+      columnName: "",
+      dataType: "VARCHAR",
+      isNullable: true,
+      isPrimaryKey: false,
+      dataClassification: "Internal",
+      dataDomain: "",
+      attributeDefinition: "",
+      defaultValue: "",
+      action: "Add",
+    };
+    setColumns((prev) => [...prev, newColumn]);
+    setSelectedColumnId(newId);
+    setRightPanelMode("column-detail");
+    setHasUnsavedChanges(true);
+  }, []);
+
   // Refresh table — reload columns for the currently selected table
   const refreshTable = useCallback(async () => {
     if (!selectedTableId) return;
@@ -825,6 +846,7 @@ export const DashboardProvider: React.FC<{ children: React.ReactNode }> = ({
         setColumns,
         setSelectedColumnId,
         updateColumn,
+        addColumn,
         steps,
         currentStep,
         setCurrentStep,
