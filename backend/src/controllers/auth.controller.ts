@@ -55,7 +55,7 @@ export const signup = async (req: Request, res: Response): Promise<void> => {
     res.cookie('refreshToken', tokens.refreshToken, refreshCookieOptions);
 
     res.status(201).json({
-      token: tokens.accessToken,
+      accessToken: tokens.accessToken,
       user: {
         id: user.id,
         email: user.email,
