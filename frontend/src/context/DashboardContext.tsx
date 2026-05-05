@@ -321,7 +321,11 @@ export const DashboardProvider: React.FC<{ children: React.ReactNode }> = ({
       };
 
       const dbColumns = columns.map(c => ({
-        id: c.id?.startsWith('col-') || c.id?.startsWith('col_new') ? undefined : c.id,
+        // Strip every kind of frontend-generated placeholder id so the backend
+        // does an INSERT, not an UPDATE-with-bad-uuid. New rows from the create
+        // drawer prefix `new-col-`, the Add Column button uses `new-col-`, and
+        // the discovered-physical path uses `col-`.
+        id: c.id?.startsWith('col-') || c.id?.startsWith('col_new') || c.id?.startsWith('new-col-') ? undefined : c.id,
         column_name: c.columnName,
         data_type: c.dataType,
         is_nullable: c.isNullable,
@@ -358,9 +362,14 @@ export const DashboardProvider: React.FC<{ children: React.ReactNode }> = ({
       setHasUnsavedChanges(false);
       addToast("success", "Changes saved successfully.");
       return res.data.table.id as string;
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
-      addToast("error", "Failed to save changes.");
+      const data = err?.response?.data;
+      const parts = [data?.error || "Failed to save changes."];
+      if (data?.detail) parts.push(`(${data.detail})`);
+      else if (data?.message) parts.push(`(${data.message})`);
+      if (data?.code) parts.push(`[${data.code}]`);
+      addToast("error", parts.join(" "));
       return null;
     }
   }, [tableDefinition, columns, selectedClusterId, selectedDatabaseId, selectedSchemaId, selectedBusinessAreaId, submissionStatus, addToast]);

@@ -21,12 +21,28 @@ export interface TableDefinition {
 }
 
 export const createOrUpdateTableDefinition = async (tableDef: Partial<TableDefinition>): Promise<TableDefinition> => {
-    if (tableDef.id) {
+    // If no id, the caller may still be referring to an existing row by its
+    // logical key (connection + db + schema + table). Look it up first so the
+    // same save flow works whether the frontend has the UUID or the physical
+    // "connId::db::schema::name" placeholder it used during discovery — without
+    // this, repeat saves on a discovered table 23505 on the unique key.
+    let effectiveId = tableDef.id;
+    if (!effectiveId && tableDef.connection_id && tableDef.database_name && tableDef.schema_name && tableDef.table_name) {
+        const existing = await getTableDefinitionByKey(
+            tableDef.connection_id,
+            tableDef.database_name,
+            tableDef.schema_name,
+            tableDef.table_name
+        );
+        if (existing) effectiveId = existing.id;
+    }
+
+    if (effectiveId) {
         const result = await query(
             `UPDATE table_definitions SET
         entity_logical_name = $1, distribution_style = $2, keys = $3, vertical_name = $4, business_area_id = $5, status = $6, updated_at = CURRENT_TIMESTAMP
        WHERE id = $7 RETURNING *`,
-            [tableDef.entity_logical_name, tableDef.distribution_style, tableDef.keys, tableDef.vertical_name, tableDef.business_area_id, tableDef.status || 'draft', tableDef.id]
+            [tableDef.entity_logical_name, tableDef.distribution_style, tableDef.keys, tableDef.vertical_name, tableDef.business_area_id, tableDef.status || 'draft', effectiveId]
         );
         return result.rows[0];
     } else {
