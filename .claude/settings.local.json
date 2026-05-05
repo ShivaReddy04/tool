@@ -14,7 +14,9 @@
       "Bash(echo \"exit=$?\")",
       "PowerShell(Set-Location \"C:\\\\Users\\\\panya\\\\Desktop\\\\dart\\\\frontend\"; npx tsc --noEmit; \"exit=$LASTEXITCODE\")",
       "PowerShell(Set-Location \"C:\\\\Users\\\\panya\\\\Desktop\\\\dart\\\\backend\"; npx tsc --noEmit; \"exit=$LASTEXITCODE\")",
-      "Bash(dir C:UserspanyaDesktopdart *)"
+      "Bash(dir C:UserspanyaDesktopdart *)",
+      "Bash(where psql *)",
+      "Bash(npx ts-node *)"
     ]
   }
 }
