@@ -1,7 +1,9 @@
-import React from "react";
+import React, { useState } from "react";
 import { useDashboard } from "../../context/DashboardContext";
-import { Card, TextInput, Select, Checkbox, Button } from "../common";
+import { useAuth } from "../../context/AuthContext";
+import { Card, TextInput, Select, Checkbox, Button, Modal, ArchitectSelector } from "../common";
 import type { DataClassification, RedshiftDataType } from "../../types";
+import type { Architect } from "../../api/architects";
 
 const DATA_TYPE_OPTIONS: { value: RedshiftDataType; label: string }[] = [
   { value: "SMALLINT", label: "SMALLINT" },
@@ -28,23 +30,71 @@ const CLASSIFICATION_OPTIONS: { value: DataClassification; label: string }[] = [
 ];
 
 export const ColumnDetailPanel: React.FC = () => {
+  const { user } = useAuth();
   const {
     columns,
     selectedColumnId,
+    selectedTableId,
     updateColumn,
     setSelectedColumnId,
     setRightPanelMode,
+    hasUnsavedChanges,
+    submissionStatus,
+    saveChanges,
+    submitForReview,
   } = useDashboard();
 
-  const column = columns.find((c) => c.id === selectedColumnId);
+  const [submitting, setSubmitting] = useState(false);
+  const [isReviewerDialogOpen, setIsReviewerDialogOpen] = useState(false);
+  const [selectedArchitect, setSelectedArchitect] = useState<Architect | null>(null);
 
-  if (!column) {
-    return null;
-  }
+  const column = columns.find((c) => c.id === selectedColumnId);
+  if (!column) return null;
+
+  const submitDisabled =
+    !hasUnsavedChanges ||
+    submissionStatus === "submitted" ||
+    !selectedTableId ||
+    submitting;
 
   const handleBack = () => {
     setSelectedColumnId("");
     setRightPanelMode("properties");
+  };
+
+  const openReviewerDialog = () => {
+    if (submitDisabled) return;
+    setSelectedArchitect(null);
+    setIsReviewerDialogOpen(true);
+  };
+
+  const closeReviewerDialog = () => {
+    if (submitting) return;
+    setIsReviewerDialogOpen(false);
+    setSelectedArchitect(null);
+  };
+
+  const handleConfirmSubmit = async () => {
+    if (!selectedArchitect || submitting) return;
+    setSubmitting(true);
+    try {
+      const savedId = await saveChanges();
+      if (!savedId) return;
+      const ok = await submitForReview(
+        user?.id ?? user?.name ?? "Unknown",
+        selectedArchitect.id,
+        user?.name ?? user?.id ?? "Unknown",
+        savedId
+      );
+      if (ok) {
+        setIsReviewerDialogOpen(false);
+        setSelectedArchitect(null);
+      }
+    } catch (err) {
+      console.error("Submit for review failed:", err);
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -71,9 +121,7 @@ export const ColumnDetailPanel: React.FC = () => {
         <TextInput
           label="Column Name"
           value={column.columnName}
-          onChange={(e) =>
-            updateColumn(column.id, { columnName: e.target.value })
-          }
+          onChange={(e) => updateColumn(column.id, { columnName: e.target.value })}
           required
         />
 
@@ -103,9 +151,7 @@ export const ColumnDetailPanel: React.FC = () => {
           options={CLASSIFICATION_OPTIONS}
           value={column.dataClassification}
           onChange={(v) =>
-            updateColumn(column.id, {
-              dataClassification: v as DataClassification,
-            })
+            updateColumn(column.id, { dataClassification: v as DataClassification })
           }
           required
         />
@@ -113,9 +159,7 @@ export const ColumnDetailPanel: React.FC = () => {
         <TextInput
           label="Data Domain"
           value={column.dataDomain}
-          onChange={(e) =>
-            updateColumn(column.id, { dataDomain: e.target.value })
-          }
+          onChange={(e) => updateColumn(column.id, { dataDomain: e.target.value })}
           placeholder="e.g., Financial"
         />
 
@@ -126,9 +170,7 @@ export const ColumnDetailPanel: React.FC = () => {
           <textarea
             value={column.attributeDefinition}
             onChange={(e) =>
-              updateColumn(column.id, {
-                attributeDefinition: e.target.value,
-              })
+              updateColumn(column.id, { attributeDefinition: e.target.value })
             }
             rows={3}
             placeholder="Business description of this column"
@@ -139,19 +181,58 @@ export const ColumnDetailPanel: React.FC = () => {
         <TextInput
           label="Default Value"
           value={column.defaultValue}
-          onChange={(e) =>
-            updateColumn(column.id, { defaultValue: e.target.value })
-          }
+          onChange={(e) => updateColumn(column.id, { defaultValue: e.target.value })}
           placeholder="e.g., 0, NULL, GETDATE()"
         />
 
         <div className="flex items-center gap-3 pt-2">
-          <Button variant="secondary" onClick={handleBack}>
+          <Button variant="secondary" onClick={handleBack} disabled={submitting}>
             Cancel
           </Button>
-          <Button variant="primary">Apply Change</Button>
+          <Button
+            variant="primary"
+            onClick={openReviewerDialog}
+            disabled={submitDisabled}
+          >
+            {submitting ? "Submitting..." : "Submit for Review"}
+          </Button>
         </div>
       </div>
+
+      <Modal
+        isOpen={isReviewerDialogOpen}
+        onClose={closeReviewerDialog}
+        title="Submit for Architect Review"
+        size="md"
+        footer={
+          <>
+            <Button variant="secondary" onClick={closeReviewerDialog} disabled={submitting}>
+              Cancel
+            </Button>
+            <Button
+              variant="primary"
+              onClick={handleConfirmSubmit}
+              disabled={!selectedArchitect || submitting}
+            >
+              {submitting ? "Submitting..." : "Submit for Review"}
+            </Button>
+          </>
+        }
+      >
+        <div className="space-y-4">
+          <p className="text-sm text-slate-600">
+            Choose an architect to review the proposed changes. They'll be notified
+            and the submission will appear in their review queue.
+          </p>
+          <ArchitectSelector
+            label="Assign Reviewer"
+            value={selectedArchitect}
+            onChange={setSelectedArchitect}
+            required
+            autoFocus
+          />
+        </div>
+      </Modal>
     </Card>
   );
 };

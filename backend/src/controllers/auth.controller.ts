@@ -14,6 +14,18 @@ import { query } from '../config/db';
 import { encrypt } from '../utils/encryption';
 import { TokenPayload } from '../types';
 
+// In production the frontend and backend live on different *.onrender.com
+// subdomains, which the browser treats as cross-site (onrender.com is on the
+// Public Suffix List). sameSite=lax would silently drop the cookie on those
+// cross-site XHRs, so use 'none' + secure when in prod.
+const isProd = process.env.NODE_ENV === 'production';
+const refreshCookieOptions = {
+  httpOnly: true,
+  secure: isProd,
+  sameSite: (isProd ? 'none' : 'lax') as 'none' | 'lax',
+  maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+};
+
 export const signup = async (req: Request, res: Response): Promise<void> => {
   try {
     const { email, password, firstName, lastName, role } = req.body;
@@ -40,13 +52,7 @@ export const signup = async (req: Request, res: Response): Promise<void> => {
     const refreshTokenHash = hashToken(tokens.refreshToken);
     await saveRefreshToken(user.id, refreshTokenHash, getRefreshTokenExpiry());
 
-    // Set refresh token as secure httpOnly cookie
-    res.cookie('refreshToken', tokens.refreshToken, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax',
-      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
-    });
+    res.cookie('refreshToken', tokens.refreshToken, refreshCookieOptions);
 
     res.status(201).json({
       token: tokens.accessToken,
@@ -98,13 +104,7 @@ export const login = async (req: Request, res: Response): Promise<void> => {
     const refreshTokenHash = hashToken(tokens.refreshToken);
     await saveRefreshToken(user.id, refreshTokenHash, getRefreshTokenExpiry());
 
-    // Set refresh token as secure httpOnly cookie
-    res.cookie('refreshToken', tokens.refreshToken, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax',
-      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
-    });
+    res.cookie('refreshToken', tokens.refreshToken, refreshCookieOptions);
 
     res.json({
       accessToken: tokens.accessToken,  // ✅ FIXED

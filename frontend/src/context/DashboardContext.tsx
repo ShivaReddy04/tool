@@ -67,12 +67,12 @@ interface DashboardContextType {
   hasUnsavedChanges: boolean;
   setHasUnsavedChanges: (v: boolean) => void;
   submissionStatus: SubmissionStatus;
-  saveChanges: () => void;
-  dryRunValidation: () => Promise<void>;
+  saveChanges: () => Promise<string | null>;
   submitForReview: (
     submittedById: string,
     assignedArchitectId: string,
-    submittedByName?: string
+    submittedByName?: string,
+    tableIdOverride?: string
   ) => Promise<boolean>;
 
   // Review (Architect)
@@ -301,8 +301,8 @@ export const DashboardProvider: React.FC<{ children: React.ReactNode }> = ({
   }, []);
 
   // Save & Submit actions
-  const saveChanges = useCallback(async () => {
-    if (!tableDefinition) return;
+  const saveChanges = useCallback(async (): Promise<string | null> => {
+    if (!tableDefinition) return null;
     try {
       // Map to db format
       const dbTableDef = {
@@ -356,42 +356,26 @@ export const DashboardProvider: React.FC<{ children: React.ReactNode }> = ({
 
       setHasUnsavedChanges(false);
       addToast("success", "Changes saved successfully.");
+      return res.data.table.id as string;
     } catch (err) {
       console.error(err);
       addToast("error", "Failed to save changes.");
+      return null;
     }
-  }, [tableDefinition, columns, selectedClusterId, selectedDatabaseId, selectedSchemaId, schemas, selectedBusinessAreaId, submissionStatus, addToast]);
+  }, [tableDefinition, columns, selectedClusterId, selectedDatabaseId, selectedSchemaId, selectedBusinessAreaId, submissionStatus, addToast]);
 
-  const dryRunValidation = useCallback(async () => {
-    if (!tableDefinition) return;
-    try {
-      // Map to db format exactly like save changes
-      const dbTableDef = {
-        connection_id: selectedClusterId,
-        database_name: selectedDatabaseId || 'default_db',
-        schema_name: selectedSchemaId || 'public',
-        table_name: tableDefinition.tableName,
-      };
-
-      const dbColumns = columns.map(c => ({
-        column_name: c.columnName,
-        data_type: c.dataType,
-        is_nullable: c.isNullable,
-        is_primary_key: c.isPrimaryKey,
-      }));
-
-      const res = await api.post('/table-definitions/dry-run', { table: dbTableDef, columns: dbColumns });
-
-      addToast("success", res.data.message);
-    } catch (err: any) {
-      console.error(err);
-      addToast("error", err.response?.data?.details || "Failed to validate SQL structure against target connection.");
-    }
-  }, [tableDefinition, columns, selectedClusterId, selectedDatabaseId, selectedSchemaId, addToast]);
 
   const submitForReview = useCallback(
-    async (submittedById: string, assignedArchitectId: string, submittedByName?: string): Promise<boolean> => {
-      if (!tableDefinition || !tableDefinition.id || tableDefinition.id.startsWith('tbl-new')) {
+    async (submittedById: string, assignedArchitectId: string, submittedByName?: string, tableIdOverride?: string): Promise<boolean> => {
+      if (!tableDefinition) {
+        addToast("error", "No table selected.");
+        return false;
+      }
+      // Prefer the override (e.g., the freshly-saved id returned by saveChanges)
+      // because tableDefinition.id from closure may still be the stale "tbl-new-..."
+      // placeholder — React state hasn't propagated within the same handler tick.
+      const effectiveTableId = tableIdOverride || tableDefinition.id;
+      if (!effectiveTableId || effectiveTableId.startsWith('tbl-new')) {
         addToast("error", "Please save the table before submitting.");
         return false;
       }
@@ -401,7 +385,7 @@ export const DashboardProvider: React.FC<{ children: React.ReactNode }> = ({
       }
       try {
         const res = await api.post('/submissions', {
-          tableId: tableDefinition.id,
+          tableId: effectiveTableId,
           submittedBy: submittedById,
           assignedArchitectId,
         });
@@ -429,8 +413,14 @@ export const DashboardProvider: React.FC<{ children: React.ReactNode }> = ({
         return true;
       } catch (err: any) {
         console.error(err);
-        const apiMessage = err?.response?.data?.error;
-        addToast("error", apiMessage || "Failed to submit for review.");
+        const data = err?.response?.data;
+        // Backend includes `message` and `code` in non-prod responses — surface
+        // them so the toast actually tells you what broke (e.g. "42703 column ... does not exist"
+        // means a pending migration). In prod only the generic `error` shows.
+        const parts = [data?.error || "Failed to submit for review."];
+        if (data?.message) parts.push(`(${data.message})`);
+        if (data?.code) parts.push(`[${data.code}]`);
+        addToast("error", parts.join(" "));
         return false;
       }
     },
@@ -710,7 +700,7 @@ export const DashboardProvider: React.FC<{ children: React.ReactNode }> = ({
     }
     setSelectedColumnId("");
     setRightPanelMode("properties");
-  }, [selectedTableId]);
+  }, [selectedTableId, addToast]);
 
   const steps: Step[] = [
     {
@@ -847,7 +837,6 @@ export const DashboardProvider: React.FC<{ children: React.ReactNode }> = ({
         setHasUnsavedChanges,
         submissionStatus,
         saveChanges,
-        dryRunValidation,
         submitForReview,
         reviewingNotification,
         setReviewingNotification,
