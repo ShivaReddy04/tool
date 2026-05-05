@@ -25,9 +25,24 @@ export const bulkUpsertColumnDefinitions = async (tableId: string, columns: Part
                 [col.column_name, col.data_type, col.is_nullable, col.is_primary_key, col.data_classification, col.data_domain, col.attribute_definition, col.default_value, col.action, col.sort_order, col.id, tableId]
             );
         } else {
+            // No id: caller may be saving a column it discovered from the
+            // physical schema (synthetic `col-<name>` placeholder ids stripped
+            // upstream). UPSERT on (table_id, column_name) so we don't 23505
+            // when DART already has a row for the same column.
             await query(
                 `INSERT INTO column_definitions (table_id, column_name, data_type, is_nullable, is_primary_key, data_classification, data_domain, attribute_definition, default_value, action, sort_order)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+         ON CONFLICT (table_id, column_name) DO UPDATE SET
+           data_type = EXCLUDED.data_type,
+           is_nullable = EXCLUDED.is_nullable,
+           is_primary_key = EXCLUDED.is_primary_key,
+           data_classification = EXCLUDED.data_classification,
+           data_domain = EXCLUDED.data_domain,
+           attribute_definition = EXCLUDED.attribute_definition,
+           default_value = EXCLUDED.default_value,
+           action = EXCLUDED.action,
+           sort_order = EXCLUDED.sort_order,
+           updated_at = CURRENT_TIMESTAMP`,
                 [tableId, col.column_name, col.data_type, col.is_nullable, col.is_primary_key, col.data_classification || 'Internal', col.data_domain, col.attribute_definition, col.default_value, col.action || 'Add', col.sort_order || 0]
             );
         }
