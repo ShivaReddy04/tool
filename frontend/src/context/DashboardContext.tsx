@@ -624,7 +624,12 @@ export const DashboardProvider: React.FC<{ children: React.ReactNode }> = ({
       return; // Skip on mount — persisted state is already loaded
     }
     if (selectedTableId) {
-      if (selectedTableId.includes('::')) {
+      // Brand-new tables created via `createTable` get a `tbl-new-<ts>` placeholder
+      // id. Their state is already populated locally — there's nothing to fetch yet,
+      // and asking the backend would 500 because the id isn't a UUID.
+      if (selectedTableId.startsWith('tbl-new-')) {
+        // no-op: keep whatever createTable() already put in state
+      } else if (selectedTableId.includes('::')) {
         // This is a physical table from the database
         const [connId, db, schema, tableName] = selectedTableId.split('::');
 

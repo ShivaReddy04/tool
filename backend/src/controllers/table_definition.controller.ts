@@ -87,9 +87,17 @@ export const saveTableDefinition = async (req: Request, res: Response): Promise<
     }
 };
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 export const getTableDefinition = async (req: Request, res: Response): Promise<void> => {
     try {
         const id = req.params.id as string;
+        // Reject non-UUID ids (e.g. frontend "tbl-new-..." placeholders) up front
+        // so we return a clean 400 rather than letting Postgres throw 22P02.
+        if (!UUID_RE.test(id)) {
+            res.status(400).json({ error: 'tableId must be a UUID' });
+            return;
+        }
         const includeRows = String(req.query.includeRows || 'false') === 'true';
         const page = parseInt(String(req.query.page || '1'), 10) || 1;
         const pageSize = parseInt(String(req.query.pageSize || '10'), 10) || 10;
