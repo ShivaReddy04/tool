@@ -16,7 +16,8 @@
       "PowerShell(Set-Location \"C:\\\\Users\\\\panya\\\\Desktop\\\\dart\\\\backend\"; npx tsc --noEmit; \"exit=$LASTEXITCODE\")",
       "Bash(dir C:UserspanyaDesktopdart *)",
       "Bash(where psql *)",
-      "Bash(npx ts-node *)"
+      "Bash(npx ts-node *)",
+      "PowerShell(git rev-parse --show-toplevel; \\(Get-Location\\).Path)"
     ]
   }
 }
