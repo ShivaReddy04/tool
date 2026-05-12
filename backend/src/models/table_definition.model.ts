@@ -1,4 +1,4 @@
-import { query } from '../config/db';
+import { query, defaultExecutor, Executor } from '../config/db';
 
 export interface TableDefinition {
     id: string;
@@ -20,7 +20,10 @@ export interface TableDefinition {
     updated_at: Date;
 }
 
-export const createOrUpdateTableDefinition = async (tableDef: Partial<TableDefinition>): Promise<TableDefinition> => {
+export const createOrUpdateTableDefinition = async (
+    tableDef: Partial<TableDefinition>,
+    executor: Executor = defaultExecutor
+): Promise<TableDefinition> => {
     // If no id, the caller may still be referring to an existing row by its
     // logical key (connection + db + schema + table). Look it up first so the
     // same save flow works whether the frontend has the UUID or the physical
@@ -32,24 +35,28 @@ export const createOrUpdateTableDefinition = async (tableDef: Partial<TableDefin
             tableDef.connection_id,
             tableDef.database_name,
             tableDef.schema_name,
-            tableDef.table_name
+            tableDef.table_name,
+            executor
         );
         if (existing) effectiveId = existing.id;
     }
 
     if (effectiveId) {
-        const result = await query(
+        // The legacy `keys` column is preserved in DB for backward compat
+        // with rows written before the Schema Name change, but is no longer
+        // touched on update so historical values are not silently nulled.
+        const result = await executor.query(
             `UPDATE table_definitions SET
-        entity_logical_name = $1, distribution_style = $2, keys = $3, vertical_name = $4, business_area_id = $5, status = $6, updated_at = CURRENT_TIMESTAMP
-       WHERE id = $7 RETURNING *`,
-            [tableDef.entity_logical_name, tableDef.distribution_style, tableDef.keys, tableDef.vertical_name, tableDef.business_area_id, tableDef.status || 'draft', effectiveId]
+        entity_logical_name = $1, distribution_style = $2, vertical_name = $3, business_area_id = $4, status = $5, updated_at = CURRENT_TIMESTAMP
+       WHERE id = $6 RETURNING *`,
+            [tableDef.entity_logical_name, tableDef.distribution_style, tableDef.vertical_name, tableDef.business_area_id, tableDef.status || 'draft', effectiveId]
         );
         return result.rows[0];
     } else {
-        const result = await query(
-            `INSERT INTO table_definitions (connection_id, database_name, schema_name, table_name, entity_logical_name, distribution_style, keys, vertical_name, business_area_id, status, created_by)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING *`,
-            [tableDef.connection_id, tableDef.database_name, tableDef.schema_name, tableDef.table_name, tableDef.entity_logical_name, tableDef.distribution_style, tableDef.keys, tableDef.vertical_name, tableDef.business_area_id, 'draft', tableDef.created_by]
+        const result = await executor.query(
+            `INSERT INTO table_definitions (connection_id, database_name, schema_name, table_name, entity_logical_name, distribution_style, vertical_name, business_area_id, status, created_by)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING *`,
+            [tableDef.connection_id, tableDef.database_name, tableDef.schema_name, tableDef.table_name, tableDef.entity_logical_name, tableDef.distribution_style, tableDef.vertical_name, tableDef.business_area_id, 'draft', tableDef.created_by]
         );
         return result.rows[0];
     }
@@ -65,8 +72,14 @@ export const getAllTableDefinitions = async (connectionId: string, schemaName: s
     return result.rows;
 };
 
-export const getTableDefinitionByKey = async (connectionId: string, databaseName: string, schemaName: string, tableName: string): Promise<TableDefinition | null> => {
-    const result = await query('SELECT * FROM table_definitions WHERE connection_id = $1 AND database_name = $2 AND schema_name = $3 AND table_name = $4 LIMIT 1', [connectionId, databaseName, schemaName, tableName]);
+export const getTableDefinitionByKey = async (
+    connectionId: string,
+    databaseName: string,
+    schemaName: string,
+    tableName: string,
+    executor: Executor = defaultExecutor
+): Promise<TableDefinition | null> => {
+    const result = await executor.query('SELECT * FROM table_definitions WHERE connection_id = $1 AND database_name = $2 AND schema_name = $3 AND table_name = $4 LIMIT 1', [connectionId, databaseName, schemaName, tableName]);
     return result.rows[0] || null;
 };
 

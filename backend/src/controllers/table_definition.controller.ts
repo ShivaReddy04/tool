@@ -4,6 +4,10 @@ import { bulkUpsertColumnDefinitions, getColumnDefinitionsByTableId } from '../m
 import { getClusterConnectionConfig } from '../models/cluster.model';
 import { getConnector } from '../services/connector';
 import { createAuditLog } from '../models/audit_log.model';
+import { validateSchemaName, validateIdentifier } from '../utils/validation';
+import { withTransaction } from '../config/db';
+
+const VALID_DISTRIBUTION_STYLES = new Set(['KEY', 'EVEN', 'ALL', 'AUTO']);
 
 export const saveTableDefinition = async (req: Request, res: Response): Promise<void> => {
     try {
@@ -15,32 +19,108 @@ export const saveTableDefinition = async (req: Request, res: Response): Promise<
             table_name: table?.table_name,
             status: table?.status,
             columnCount: Array.isArray(columns) ? columns.length : 0,
+            userId: req.user?.userId,
         });
 
         if (!table || !table.connection_id || !table.database_name || !table.schema_name || !table.table_name) {
-            res.status(400).json({ error: 'Required table definition parameters missing' });
+            res.status(400).json({
+                error: 'Required table definition parameters missing',
+                missing: [
+                    !table?.connection_id && 'connection_id',
+                    !table?.database_name && 'database_name',
+                    !table?.schema_name && 'schema_name',
+                    !table?.table_name && 'table_name',
+                ].filter(Boolean),
+            });
             return;
         }
 
-        // Save Table
-        const savedTable = await createOrUpdateTableDefinition(table);
+        // schema_name is part of the unique key for table_definitions and is
+        // also written to physical DDL downstream — validate format up front
+        // so we can return a friendly 400 instead of a Postgres 22P02 / 23505.
+        const schemaCheck = validateSchemaName(table.schema_name);
+        if (!schemaCheck.valid) {
+            res.status(400).json({ error: schemaCheck.error || 'Invalid schema_name', field: 'schema_name' });
+            return;
+        }
+        table.schema_name = schemaCheck.sanitized;
 
-        // Save Columns
-        if (columns && Array.isArray(columns) && columns.length > 0) {
-            await bulkUpsertColumnDefinitions(savedTable.id, columns);
+        // table_name lands in DDL too — apply the same identifier rule.
+        const tableNameCheck = validateIdentifier(table.table_name, 'Table name');
+        if (!tableNameCheck.valid) {
+            res.status(400).json({ error: tableNameCheck.error, field: 'table_name' });
+            return;
+        }
+        table.table_name = tableNameCheck.sanitized;
+
+        // distribution_style has a DB-level CHECK constraint. Catching it here
+        // lets us return a clean 400 rather than a 23514 with cryptic constraint
+        // name in the response.
+        if (table.distribution_style && !VALID_DISTRIBUTION_STYLES.has(table.distribution_style)) {
+            res.status(400).json({ error: 'Invalid distribution_style', field: 'distribution_style' });
+            return;
         }
 
-        const savedColumns = await getColumnDefinitionsByTableId(savedTable.id);
+        // Per-column validation: every column must have a valid identifier
+        // and a non-empty data type. Detect duplicate names client-side so
+        // the eventual 23505 from the (table_id, column_name) unique key is
+        // never the path the user hits.
+        const colList: any[] = Array.isArray(columns) ? columns : [];
+        const seenNames = new Set<string>();
+        for (let i = 0; i < colList.length; i++) {
+            const col = colList[i] || {};
+            const nameCheck = validateIdentifier(col.column_name, `Column #${i + 1} name`);
+            if (!nameCheck.valid) {
+                res.status(400).json({ error: nameCheck.error, field: 'column_name', rowIndex: i });
+                return;
+            }
+            col.column_name = nameCheck.sanitized;
+            if (!col.data_type || typeof col.data_type !== 'string') {
+                res.status(400).json({ error: `Column #${i + 1} requires a data type`, field: 'data_type', rowIndex: i });
+                return;
+            }
+            const lower = nameCheck.sanitized.toLowerCase();
+            if (seenNames.has(lower)) {
+                res.status(400).json({ error: `Duplicate column name "${nameCheck.sanitized}"`, field: 'column_name', rowIndex: i });
+                return;
+            }
+            seenNames.add(lower);
+        }
 
-        await createAuditLog({
-            action: 'SAVE_TABLE',
-            entity_type: 'table_definition',
-            entity_id: savedTable.id,
-            user_name: 'Developer', // We can extract from JWT once integrated
-            metadata: { table_name: savedTable.table_name, column_count: columns?.length || 0 }
+        // Identity comes from the JWT — never from the body. Audit logging
+        // attributes both the user id and the email so we can trace edits
+        // even if the user account is later renamed.
+        const userId = req.user?.userId;
+        const userEmail = req.user?.email || 'unknown';
+        const tablePayload = { ...table, created_by: userId ?? table.created_by };
+
+        // Single transaction so a column-insert failure rolls back the
+        // table insert/update — no orphaned `table_definitions` row.
+        const result = await withTransaction(async (exec) => {
+            const savedTable = await createOrUpdateTableDefinition(tablePayload, exec);
+            if (colList.length > 0) {
+                await bulkUpsertColumnDefinitions(savedTable.id, colList, exec);
+            }
+            const savedColumns = await getColumnDefinitionsByTableId(savedTable.id, exec);
+            return { savedTable, savedColumns };
         });
 
-        res.status(200).json({ table: savedTable, columns: savedColumns });
+        // Audit log outside the transaction and best-effort — never let an
+        // audit-table issue mask a successful save.
+        try {
+            await createAuditLog({
+                action: 'SAVE_TABLE',
+                entity_type: 'table_definition',
+                entity_id: result.savedTable.id,
+                user_id: userId,
+                user_name: userEmail,
+                metadata: { table_name: result.savedTable.table_name, column_count: colList.length },
+            });
+        } catch (auditErr) {
+            console.warn('[table-def] audit log failed (non-fatal)', auditErr);
+        }
+
+        res.status(200).json({ table: result.savedTable, columns: result.savedColumns });
     } catch (err: any) {
         const pgCode: string | undefined = err?.code;
         console.error('[table-def] saveTableDefinition failed', {

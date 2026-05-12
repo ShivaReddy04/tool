@@ -11,6 +11,7 @@ import tableDefinitionRoutes from './routes/table_definition.routes';
 import submissionRoutes from './routes/submission.routes';
 import architectRoutes from './routes/architect.routes';
 import changeRequestRoutes from './routes/change_request.routes';
+import abbreviationRoutes from './routes/abbreviation.routes';
 
 dotenv.config();
 
@@ -37,6 +38,7 @@ app.use('/api/table-definitions', tableDefinitionRoutes);
 app.use('/api/submissions', submissionRoutes);
 app.use('/api/architect', architectRoutes);
 app.use('/api/change-requests', changeRequestRoutes);
+app.use('/api/abbreviations', abbreviationRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => {

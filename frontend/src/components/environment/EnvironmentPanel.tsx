@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { useDashboard } from "../../context/DashboardContext";
-import { Card, Select, Button, Badge } from "../common";
+import { Card, Select, Button, Badge, BusinessAreaSelector } from "../common";
 import { AddConnectionDrawer } from "./AddConnectionDrawer";
 import {
   listConnections,
@@ -19,7 +19,6 @@ const DB_TYPE_LABELS: Record<string, string> = {
 
 export const EnvironmentPanel: React.FC = () => {
   const {
-    businessAreas,
     selectedBusinessAreaId,
     setSelectedBusinessAreaId,
     setTables,
@@ -204,11 +203,6 @@ export const EnvironmentPanel: React.FC = () => {
     label: s,
   }));
 
-  const businessAreaOptions = businessAreas.map((ba) => ({
-    value: ba.id,
-    label: ba.name,
-  }));
-
   return (
     <div className="space-y-4">
       <Card
@@ -277,13 +271,15 @@ export const EnvironmentPanel: React.FC = () => {
             </div>
           )}
 
-          <Select
-            label="Business Area"
-            options={businessAreaOptions}
-            value={selectedBusinessAreaId}
-            onChange={(v) => setSelectedBusinessAreaId(v)}
-            placeholder="Select business area"
-          />
+          <div className="border-t border-slate-100 pt-4">
+            <div className="text-xs font-semibold text-slate-700 mb-2 uppercase tracking-wide">
+              Business Area
+            </div>
+            <BusinessAreaSelector
+              value={selectedBusinessAreaId}
+              onChange={(id) => setSelectedBusinessAreaId(id)}
+            />
+          </div>
 
           <Button
             variant="outline"

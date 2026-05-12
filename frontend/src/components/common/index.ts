@@ -12,3 +12,4 @@ export { ConfirmDialog } from "./ConfirmDialog";
 export { ToastContainer } from "./Toast";
 export type { ToastData } from "./Toast";
 export { ArchitectSelector } from "./ArchitectSelector";
+export { BusinessAreaSelector } from "./BusinessAreaSelector";

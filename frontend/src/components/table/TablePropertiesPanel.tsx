@@ -1,11 +1,62 @@
-import React from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useAuth } from "../../context/AuthContext";
 import { useDashboard } from "../../context/DashboardContext";
-import { Card, Button, Badge } from "../common";
+import { Card, Button, Badge, TextInput, Select, BusinessAreaSelector } from "../common";
+import {
+  VERTICAL_NAME_OPTIONS,
+  type DistributionStyle,
+  type TableDefinition,
+  type VerticalName,
+} from "../../types";
+import { sanitizeSchemaInput, validateSchemaName } from "../../utils/validation";
+
+const DISTRIBUTION_OPTIONS: { value: DistributionStyle; label: string }[] = [
+  { value: "KEY", label: "KEY" },
+  { value: "EVEN", label: "EVEN" },
+  { value: "ALL", label: "ALL" },
+  { value: "AUTO", label: "AUTO" },
+];
+
+const VERTICAL_OPTIONS = VERTICAL_NAME_OPTIONS.map((v) => ({ value: v, label: v }));
+
+const buildVerticalOptions = (current: string) => {
+  // Existing rows may carry a free-text vertical that pre-dates the dropdown
+  // (e.g. "Finance"). Surface it as a one-off option so editing doesn't
+  // silently overwrite legitimate legacy values.
+  const known = (VERTICAL_NAME_OPTIONS as readonly string[]).includes(current);
+  if (!current || known) return VERTICAL_OPTIONS;
+  return [...VERTICAL_OPTIONS, { value: current, label: `${current} (legacy)` }];
+};
 
 export const TablePropertiesPanel: React.FC = () => {
   const { hasRole } = useAuth();
-  const { tableDefinition, columns, submissionStatus } = useDashboard();
+  const {
+    tableDefinition,
+    columns,
+    submissionStatus,
+    setTableDefinition,
+    setHasUnsavedChanges,
+    saveChanges,
+    addToast,
+  } = useDashboard();
+
+  const [isEditing, setIsEditing] = useState(false);
+  const [draft, setDraft] = useState<TableDefinition | null>(null);
+  const [showErrors, setShowErrors] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  // Reset edit mode when the underlying table changes — prevents stale
+  // drafts leaking across table selections.
+  useEffect(() => {
+    setIsEditing(false);
+    setDraft(null);
+    setShowErrors(false);
+  }, [tableDefinition?.id]);
+
+  const schemaCheck = useMemo(
+    () => validateSchemaName(draft?.schemaName || ""),
+    [draft?.schemaName]
+  );
 
   if (!tableDefinition) {
     return (
@@ -17,11 +68,57 @@ export const TablePropertiesPanel: React.FC = () => {
     );
   }
 
+  const startEdit = () => {
+    setDraft({ ...tableDefinition });
+    setIsEditing(true);
+    setShowErrors(false);
+  };
+
+  const cancelEdit = () => {
+    setIsEditing(false);
+    setDraft(null);
+    setShowErrors(false);
+  };
+
+  const saveEdit = async () => {
+    if (!draft) return;
+    if (!draft.tableName.trim()) {
+      setShowErrors(true);
+      addToast("error", "Table name is required.");
+      return;
+    }
+    if (!schemaCheck.valid) {
+      setShowErrors(true);
+      addToast("error", schemaCheck.error || "Schema name is invalid.");
+      return;
+    }
+
+    setSaving(true);
+    // Push the draft into the global table definition so saveChanges sees it.
+    setTableDefinition({ ...draft, schemaName: schemaCheck.sanitized });
+    setHasUnsavedChanges(true);
+
+    // Defer save by one tick so React applies the state update before
+    // saveChanges reads from context.
+    await new Promise((r) => setTimeout(r, 0));
+    const result = await saveChanges();
+    setSaving(false);
+    if (result !== null) {
+      setIsEditing(false);
+      setDraft(null);
+      setShowErrors(false);
+    }
+  };
+
+  const updateDraft = (patch: Partial<TableDefinition>) => {
+    setDraft((prev) => (prev ? { ...prev, ...patch } : prev));
+  };
+
   const properties = [
     { label: "Table Name", value: tableDefinition.tableName },
     { label: "Entity Logical Name", value: tableDefinition.entityLogicalName },
+    { label: "Schema Name", value: tableDefinition.schemaName },
     { label: "Distribution Style", value: tableDefinition.distributionStyle },
-    { label: "Keys", value: tableDefinition.keys },
     { label: "Vertical Name", value: tableDefinition.verticalName },
     { label: "Total Columns", value: columns.length.toString() },
   ];
@@ -33,6 +130,8 @@ export const TablePropertiesPanel: React.FC = () => {
     rejected: "danger",
   };
 
+  const canEdit = hasRole("architect") || hasRole("developer");
+
   return (
     <Card
       title="Table Properties"
@@ -43,29 +142,92 @@ export const TablePropertiesPanel: React.FC = () => {
         </svg>
       }
       headerAction={
-        hasRole("architect") ? (
-          <Button variant="ghost" size="sm">
-            Edit
-          </Button>
+        canEdit ? (
+          isEditing ? (
+            <div className="flex items-center gap-2">
+              <Button variant="ghost" size="sm" onClick={cancelEdit} disabled={saving}>
+                Cancel
+              </Button>
+              <Button variant="primary" size="sm" onClick={saveEdit} disabled={saving}>
+                {saving ? "Saving..." : "Save"}
+              </Button>
+            </div>
+          ) : (
+            <Button variant="ghost" size="sm" onClick={startEdit}>
+              Edit
+            </Button>
+          )
         ) : undefined
       }
     >
-      <div className="space-y-3">
-        {properties.map((prop) => (
-          <div key={prop.label} className="flex items-start justify-between gap-4">
-            <span className="text-xs text-slate-500 flex-shrink-0">{prop.label}</span>
-            <span className="text-xs font-medium text-slate-700 text-right">
-              {prop.value || "—"}
-            </span>
+      {isEditing && draft ? (
+        <div className="space-y-4">
+          <TextInput
+            label="Table Name"
+            value={draft.tableName}
+            onChange={(e) => updateDraft({ tableName: e.target.value })}
+            required
+            error={showErrors && !draft.tableName.trim() ? "Table name is required" : undefined}
+          />
+          <TextInput
+            label="Entity Logical Name"
+            value={draft.entityLogicalName}
+            onChange={(e) => updateDraft({ entityLogicalName: e.target.value })}
+          />
+          <TextInput
+            label="Schema Name"
+            value={draft.schemaName}
+            onChange={(e) =>
+              updateDraft({ schemaName: sanitizeSchemaInput(e.target.value) })
+            }
+            onBlur={(e) =>
+              updateDraft({ schemaName: (e.target.value || "").trim() })
+            }
+            required
+            error={showErrors && !schemaCheck.valid ? schemaCheck.error : undefined}
+          />
+          <Select
+            label="Distribution Style"
+            options={DISTRIBUTION_OPTIONS}
+            value={draft.distributionStyle}
+            onChange={(v) => updateDraft({ distributionStyle: v as DistributionStyle })}
+            required
+          />
+          <Select
+            label="Vertical Name"
+            options={buildVerticalOptions(draft.verticalName)}
+            value={draft.verticalName}
+            onChange={(v) => updateDraft({ verticalName: v as VerticalName })}
+            placeholder="Select vertical"
+          />
+          <div>
+            <div className="text-xs font-medium text-slate-600 uppercase tracking-wide mb-2">
+              Business Area
+            </div>
+            <BusinessAreaSelector
+              value={draft.businessAreaId || ""}
+              onChange={(id) => updateDraft({ businessAreaId: id })}
+            />
           </div>
-        ))}
-        <div className="flex items-center justify-between gap-4 pt-2 border-t border-slate-100">
-          <span className="text-xs text-slate-500">Submission Status</span>
-          <Badge variant={statusVariant[submissionStatus] ?? "neutral"}>
-            {submissionStatus.charAt(0).toUpperCase() + submissionStatus.slice(1)}
-          </Badge>
         </div>
-      </div>
+      ) : (
+        <div className="space-y-3">
+          {properties.map((prop) => (
+            <div key={prop.label} className="flex items-start justify-between gap-4">
+              <span className="text-xs text-slate-500 flex-shrink-0">{prop.label}</span>
+              <span className="text-xs font-medium text-slate-700 text-right">
+                {prop.value || "—"}
+              </span>
+            </div>
+          ))}
+          <div className="flex items-center justify-between gap-4 pt-2 border-t border-slate-100">
+            <span className="text-xs text-slate-500">Submission Status</span>
+            <Badge variant={statusVariant[submissionStatus] ?? "neutral"}>
+              {submissionStatus.charAt(0).toUpperCase() + submissionStatus.slice(1)}
+            </Badge>
+          </div>
+        </div>
+      )}
     </Card>
   );
 };

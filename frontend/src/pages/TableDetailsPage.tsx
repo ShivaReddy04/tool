@@ -18,7 +18,7 @@ const TableMetadataSection: React.FC = () => {
     { label: "Table Name", value: tableDefinition.tableName },
     { label: "Entity Logical Name", value: tableDefinition.entityLogicalName },
     { label: "Distribution Style", value: tableDefinition.distributionStyle },
-    { label: "Keys", value: tableDefinition.keys },
+    { label: "Schema Name", value: tableDefinition.schemaName },
     { label: "Vertical Name", value: tableDefinition.verticalName },
     { label: "Total Columns", value: columns.length.toString() },
   ];

@@ -142,7 +142,7 @@ export const ReviewDrawer: React.FC = () => {
                 { label: "Table Name", value: tableDef.tableName },
                 { label: "Entity Logical Name", value: tableDef.entityLogicalName },
                 { label: "Distribution Style", value: tableDef.distributionStyle },
-                { label: "Keys", value: tableDef.keys },
+                { label: "Schema Name", value: tableDef.schemaName },
                 { label: "Vertical Name", value: tableDef.verticalName },
                 { label: "Total Columns", value: cols.length.toString() },
               ].map((prop) => (

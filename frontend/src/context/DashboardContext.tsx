@@ -98,7 +98,13 @@ interface DashboardContextType {
   // Actions
   resetEnvironment: () => void;
   resetTable: () => void;
-  createTable: (def: TableDefinition) => void;
+  /**
+   * Persist a new table + its columns server-side in a single transaction.
+   * Returns the created table id on success, or `null` on failure (a toast
+   * with the backend error message is already shown). The caller is expected
+   * to keep the drawer open on `null` so the user can correct and retry.
+   */
+  createTable: (def: TableDefinition) => Promise<string | null>;
   refreshTable: () => void;
   refreshMetadata: () => void;
 }
@@ -106,6 +112,69 @@ interface DashboardContextType {
 const DashboardContext = createContext<DashboardContextType | undefined>(undefined);
 
 const STORAGE_KEY = "dart_dashboard_state";
+
+/* ── shared column mappers ────────────────────────────────────────────────
+ * Every code path that talks to the backend goes through these so all 24
+ * metadata fields stay in sync. Update here, not in individual call sites.
+ */
+function columnFromServer(c: any): ColumnDefinition {
+  return {
+    id: c.id,
+    columnName: c.column_name,
+    dataType: c.data_type,
+    isNullable: !!c.is_nullable,
+    isPrimaryKey: !!c.is_primary_key,
+    dataClassification: c.data_classification || "",
+    dataDomain: c.data_domain || "",
+    attributeDefinition: c.attribute_definition || "",
+    defaultValue: c.default_value || "",
+    action: c.action || "No Change",
+    sortOrder: typeof c.sort_order === "number" ? c.sort_order : 0,
+    attributeName: c.attribute_name || "",
+    hasStats: !!c.has_stats,
+    compressValue: c.compress_value || "",
+    columnFormat: c.column_format || "",
+    comments: c.comments || "",
+    sourceTableName: c.source_table_name || "",
+    sourceColumnName: c.source_column_name || "",
+    transformation: c.transformation || "",
+    tierValue: c.tier_value || "",
+    sourceSystem: c.source_system || "",
+    encoding: c.encoding || "",
+    isSortKey: !!c.is_sort_key,
+    isDistKey: !!c.is_dist_key,
+    sourceDatabaseName: c.source_database_name || "",
+  };
+}
+
+function columnToServer(c: ColumnDefinition, fallbackSortOrder: number): Record<string, unknown> {
+  return {
+    column_name: c.columnName,
+    data_type: c.dataType,
+    is_nullable: c.isNullable,
+    is_primary_key: c.isPrimaryKey,
+    data_classification: c.dataClassification || "Internal",
+    data_domain: c.dataDomain,
+    attribute_definition: c.attributeDefinition,
+    default_value: c.defaultValue,
+    action: c.action || "Add",
+    sort_order: typeof c.sortOrder === "number" ? c.sortOrder : fallbackSortOrder,
+    attribute_name: c.attributeName,
+    has_stats: !!c.hasStats,
+    compress_value: c.compressValue,
+    column_format: c.columnFormat,
+    comments: c.comments,
+    source_table_name: c.sourceTableName,
+    source_column_name: c.sourceColumnName,
+    transformation: c.transformation,
+    tier_value: c.tierValue,
+    source_system: c.sourceSystem,
+    encoding: c.encoding,
+    is_sort_key: !!c.isSortKey,
+    is_dist_key: !!c.isDistKey,
+    source_database_name: c.sourceDatabaseName,
+  };
+}
 
 function loadPersistedState() {
   try {
@@ -131,23 +200,13 @@ function pendingSubmissionToNotification(s: any): Notification {
     tableName: tablePayload.table_name || s.table_name || "",
     entityLogicalName: tablePayload.entity_logical_name || "",
     distributionStyle: tablePayload.distribution_style || "AUTO",
-    keys: tablePayload.keys || "",
+    schemaName: tablePayload.schema_name || "",
     verticalName: tablePayload.vertical_name || "",
+    businessAreaId: tablePayload.business_area_id || "",
     columns: [],
   };
 
-  const columns: ColumnDefinition[] = columnsPayload.map((c: any) => ({
-    id: c.id,
-    columnName: c.column_name,
-    dataType: c.data_type,
-    isNullable: c.is_nullable,
-    isPrimaryKey: c.is_primary_key,
-    dataClassification: c.data_classification,
-    dataDomain: c.data_domain || "",
-    attributeDefinition: c.attribute_definition || "",
-    defaultValue: c.default_value || "",
-    action: c.action,
-  }));
+  const columns: ColumnDefinition[] = columnsPayload.map(columnFromServer);
 
   const submitterName = s.submitter_name || "Developer";
   const tableName = s.table_name || tableDefinition.tableName;
@@ -305,37 +364,35 @@ export const DashboardProvider: React.FC<{ children: React.ReactNode }> = ({
   const saveChanges = useCallback(async (): Promise<string | null> => {
     if (!tableDefinition) return null;
     try {
+      // Schema name precedence: the explicit field on the table definition
+      // (set in the Create drawer or Edit-metadata flow) wins over the
+      // env-selected schema, so per-table overrides survive a save.
+      const effectiveSchema =
+        (tableDefinition.schemaName && tableDefinition.schemaName.trim()) ||
+        selectedSchemaId ||
+        'public';
+
       // Map to db format
       const dbTableDef = {
         id: tableDefinition.id?.startsWith('tbl-new') || tableDefinition.id?.includes('::') ? undefined : tableDefinition.id,
         connection_id: selectedClusterId,
         database_name: selectedDatabaseId || 'default_db',
-        schema_name: selectedSchemaId || 'public',
+        schema_name: effectiveSchema,
         table_name: tableDefinition.tableName,
         entity_logical_name: tableDefinition.entityLogicalName,
         distribution_style: tableDefinition.distributionStyle,
-        keys: tableDefinition.keys,
         vertical_name: tableDefinition.verticalName,
-        business_area_id: selectedBusinessAreaId || undefined,
+        business_area_id: tableDefinition.businessAreaId || selectedBusinessAreaId || undefined,
         status: submissionStatus
       };
 
-      const dbColumns = columns.map(c => ({
+      const dbColumns = columns.map((c, idx) => ({
         // Strip every kind of frontend-generated placeholder id so the backend
         // does an INSERT, not an UPDATE-with-bad-uuid. New rows from the create
         // drawer prefix `new-col-`, the Add Column button uses `new-col-`, and
         // the discovered-physical path uses `col-`.
         id: c.id?.startsWith('col-') || c.id?.startsWith('col_new') || c.id?.startsWith('new-col-') ? undefined : c.id,
-        column_name: c.columnName,
-        data_type: c.dataType,
-        is_nullable: c.isNullable,
-        is_primary_key: c.isPrimaryKey,
-        data_classification: c.dataClassification,
-        data_domain: c.dataDomain,
-        attribute_definition: c.attributeDefinition,
-        default_value: c.defaultValue,
-        action: c.action,
-        sort_order: 0
+        ...columnToServer(c, idx),
       }));
 
       const res = await api.post('/table-definitions', { table: dbTableDef, columns: dbColumns });
@@ -345,18 +402,7 @@ export const DashboardProvider: React.FC<{ children: React.ReactNode }> = ({
       }
 
       if (res.data.columns && res.data.columns.length > 0) {
-        setColumns(res.data.columns.map((c: any) => ({
-          id: c.id,
-          columnName: c.column_name,
-          dataType: c.data_type,
-          isNullable: c.is_nullable,
-          isPrimaryKey: c.is_primary_key,
-          dataClassification: c.data_classification,
-          dataDomain: c.data_domain || '',
-          attributeDefinition: c.attribute_definition || '',
-          defaultValue: c.default_value || '',
-          action: c.action
-        })));
+        setColumns(res.data.columns.map(columnFromServer));
       }
 
       setHasUnsavedChanges(false);
@@ -507,29 +553,98 @@ export const DashboardProvider: React.FC<{ children: React.ReactNode }> = ({
     [reviewingNotification, markNotificationRead, addNotification, addToast, refreshPendingSubmissions]
   );
 
-  // Create table action
+  // Create table action — persists immediately to the backend in a single
+  // transactional save. Earlier versions only stashed a `tbl-new-*` placeholder
+  // in local state and deferred the actual POST to a later Save click, which
+  // left users staring at a "table" that did not exist server-side and could
+  // not be submitted for review. The drawer now treats this as the single
+  // create step.
   const createTable = useCallback(
-    (def: TableDefinition) => {
-      const newId = `tbl-new-${Date.now()}`;
-      const now = new Date().toISOString().split("T")[0];
-      const summary: TableSummary = {
-        id: newId,
-        name: def.tableName,
-        schemaId: selectedSchemaId,
-        columnCount: def.columns.length,
-        createdAt: now,
-        updatedAt: now,
+    async (def: TableDefinition): Promise<string | null> => {
+      // Fail fast with a specific message if environment selection is
+      // incomplete — better than the generic 400 the backend would return.
+      if (!selectedClusterId) {
+        addToast("error", "Select a database connection before creating a table.");
+        return null;
+      }
+      if (!selectedDatabaseId) {
+        addToast("error", "Select a cluster (database) before creating a table.");
+        return null;
+      }
+      const targetSchema = (def.schemaName && def.schemaName.trim()) || selectedSchemaId;
+      if (!targetSchema) {
+        addToast("error", "Select a schema before creating a table.");
+        return null;
+      }
+
+      const dbTableDef = {
+        connection_id: selectedClusterId,
+        database_name: selectedDatabaseId,
+        schema_name: targetSchema,
+        table_name: def.tableName,
+        entity_logical_name: def.entityLogicalName,
+        distribution_style: def.distributionStyle,
+        vertical_name: def.verticalName,
+        business_area_id: def.businessAreaId || selectedBusinessAreaId || undefined,
+        status: "draft",
       };
-      setTables((prev) => [...prev, summary]);
-      setSelectedTableId(newId);
-      setTableDefinition({ ...def, id: newId });
-      setColumns(def.columns);
-      setHasUnsavedChanges(true);
-      setSubmissionStatus("draft");
-      setCurrentStep(3);
-      addToast("success", `Table "${def.tableName}" created. Save and submit when ready.`);
+
+      const dbColumns = def.columns.map((c, idx) => columnToServer(c, idx));
+
+      try {
+        const res = await api.post("/table-definitions", { table: dbTableDef, columns: dbColumns });
+        const saved = res.data.table;
+        const savedColumns: ColumnDefinition[] = (res.data.columns || []).map(columnFromServer);
+
+        const summary: TableSummary = {
+          id: saved.id,
+          name: saved.table_name,
+          schemaId: selectedSchemaId,
+          columnCount: savedColumns.length,
+          createdAt: saved.created_at || new Date().toISOString(),
+          updatedAt: saved.updated_at || new Date().toISOString(),
+        };
+        // Replace any optimistic placeholder or physical-table row with the
+        // same name so the list doesn't show duplicates after creation.
+        setTables((prev) => {
+          const filtered = prev.filter((t) => t.name !== summary.name);
+          return [...filtered, summary];
+        });
+        setTableDefinition({
+          id: saved.id,
+          tableName: saved.table_name,
+          entityLogicalName: saved.entity_logical_name || "",
+          distributionStyle: saved.distribution_style || "AUTO",
+          schemaName: saved.schema_name || "",
+          verticalName: saved.vertical_name || "",
+          businessAreaId: saved.business_area_id || "",
+          columns: savedColumns,
+        });
+        setColumns(savedColumns);
+        setSelectedTableId(saved.id);
+        setHasUnsavedChanges(false);
+        setSubmissionStatus("draft");
+        setCurrentStep(3);
+        addToast("success", `Table "${saved.table_name}" created.`);
+        return saved.id as string;
+      } catch (err: any) {
+        console.error("createTable failed", err);
+        const data = err?.response?.data;
+        const parts = [data?.error || "Failed to create table."];
+        if (data?.detail) parts.push(`(${data.detail})`);
+        else if (data?.message) parts.push(`(${data.message})`);
+        if (data?.code) parts.push(`[${data.code}]`);
+        addToast("error", parts.join(" "));
+        return null;
+      }
     },
-    [selectedSchemaId, addToast]
+    [
+      selectedClusterId,
+      selectedDatabaseId,
+      selectedSchemaId,
+      selectedBusinessAreaId,
+      addToast,
+    ]
   );
 
   // Refresh metadata — reload clusters, schemas, and tables
@@ -543,7 +658,9 @@ export const DashboardProvider: React.FC<{ children: React.ReactNode }> = ({
       setBusinessAreas(areaRes.data.map((a: any) => ({
         id: a.id,
         name: a.name,
-        description: a.description
+        description: a.description,
+        parentId: a.parent_id ?? null,
+        level: a.level,
       })));
       addToast("success", "Metadata refreshed.");
     } catch (err) {
@@ -651,22 +768,22 @@ export const DashboardProvider: React.FC<{ children: React.ReactNode }> = ({
               tableName: tableName,
               entityLogicalName: '',
               distributionStyle: 'AUTO',
-              keys: '',
+              schemaName: schema,
               verticalName: '',
+              businessAreaId: '',
               columns: []
             });
-            setColumns(cols.map((c: any) => ({
-              id: `col-${c.column_name}`,
-              columnName: c.column_name,
-              dataType: c.data_type,
-              isNullable: c.is_nullable === 'YES' || c.is_nullable === true,
-              isPrimaryKey: false, // We could infer from another endpoint, defaults to false
-              dataClassification: '',
-              dataDomain: '',
-              attributeDefinition: '',
-              defaultValue: c.column_default || '',
-              action: 'No Change'
-            })));
+            setColumns(cols.map((c: any) =>
+              columnFromServer({
+                id: `col-${c.column_name}`,
+                column_name: c.column_name,
+                data_type: c.data_type,
+                is_nullable: c.is_nullable === 'YES' || c.is_nullable === true,
+                is_primary_key: false,
+                default_value: c.column_default || '',
+                action: 'No Change',
+              })
+            ));
             setCurrentStep(3);
             setSubmissionStatus("draft");
             setHasUnsavedChanges(false);
@@ -684,22 +801,12 @@ export const DashboardProvider: React.FC<{ children: React.ReactNode }> = ({
               tableName: res.data.table.table_name,
               entityLogicalName: res.data.table.entity_logical_name || '',
               distributionStyle: res.data.table.distribution_style || 'AUTO',
-              keys: res.data.table.keys || '',
+              schemaName: res.data.table.schema_name || '',
               verticalName: res.data.table.vertical_name || '',
+              businessAreaId: res.data.table.business_area_id || '',
               columns: res.data.columns
             });
-            setColumns(res.data.columns.map((c: any) => ({
-              id: c.id,
-              columnName: c.column_name,
-              dataType: c.data_type,
-              isNullable: c.is_nullable,
-              isPrimaryKey: c.is_primary_key,
-              dataClassification: c.data_classification,
-              dataDomain: c.data_domain || '',
-              attributeDefinition: c.attribute_definition || '',
-              defaultValue: c.default_value || '',
-              action: c.action
-            })));
+            setColumns(res.data.columns.map(columnFromServer));
             setCurrentStep(3);
             setSubmissionStatus(res.data.table.status);
             setHasUnsavedChanges(false);
@@ -758,6 +865,20 @@ export const DashboardProvider: React.FC<{ children: React.ReactNode }> = ({
       attributeDefinition: "",
       defaultValue: "",
       action: "Add",
+      attributeName: "",
+      hasStats: false,
+      compressValue: "",
+      columnFormat: "",
+      comments: "",
+      sourceTableName: "",
+      sourceColumnName: "",
+      transformation: "",
+      tierValue: "",
+      sourceSystem: "",
+      encoding: "",
+      isSortKey: false,
+      isDistKey: false,
+      sourceDatabaseName: "",
     };
     setColumns((prev) => [...prev, newColumn]);
     setSelectedColumnId(newId);
@@ -775,22 +896,12 @@ export const DashboardProvider: React.FC<{ children: React.ReactNode }> = ({
         tableName: res.data.table.table_name,
         entityLogicalName: res.data.table.entity_logical_name || '',
         distributionStyle: res.data.table.distribution_style || 'AUTO',
-        keys: res.data.table.keys || '',
+        schemaName: res.data.table.schema_name || '',
         verticalName: res.data.table.vertical_name || '',
+        businessAreaId: res.data.table.business_area_id || '',
         columns: res.data.columns
       });
-      setColumns(res.data.columns.map((c: any) => ({
-        id: c.id,
-        columnName: c.column_name,
-        dataType: c.data_type,
-        isNullable: c.is_nullable,
-        isPrimaryKey: c.is_primary_key,
-        dataClassification: c.data_classification,
-        dataDomain: c.data_domain || '',
-        attributeDefinition: c.attribute_definition || '',
-        defaultValue: c.default_value || '',
-        action: c.action
-      })));
+      setColumns(res.data.columns.map(columnFromServer));
       setSelectedColumnId("");
       setRightPanelMode("properties");
       setHasUnsavedChanges(false);

@@ -35,10 +35,14 @@ export interface Schema {
   clusterId: string;
 }
 
+export type BusinessAreaLevel = "domain" | "business_area" | "sub_area";
+
 export interface BusinessArea {
   id: string;
   name: string;
   description?: string;
+  parentId?: string | null;
+  level?: BusinessAreaLevel;
 }
 
 export interface TableSummary {
@@ -52,13 +56,23 @@ export interface TableSummary {
 
 export type DistributionStyle = "KEY" | "EVEN" | "ALL" | "AUTO";
 
+export const VERTICAL_NAME_OPTIONS = ["Sales", "Enterprise", "Marketing"] as const;
+export type VerticalName = (typeof VERTICAL_NAME_OPTIONS)[number] | "";
+
 export interface TableDefinition {
   id?: string;
   tableName: string;
   entityLogicalName: string;
   distributionStyle: DistributionStyle;
-  keys: string;
-  verticalName: string;
+  /**
+   * Physical schema name. Required for new tables; mapped to
+   * `table_definitions.schema_name` on the backend.
+   */
+  schemaName: string;
+  /** @deprecated Replaced by `schemaName`. Retained for backward compatibility with old payloads. */
+  keys?: string;
+  verticalName: VerticalName | string;
+  businessAreaId?: string;
   columns: ColumnDefinition[];
 }
 
@@ -92,11 +106,30 @@ export interface ColumnDefinition {
   dataType: RedshiftDataType | string;
   isNullable: boolean;
   isPrimaryKey: boolean;
-  dataClassification: DataClassification;
+  dataClassification: DataClassification | "";
   dataDomain: string;
   attributeDefinition: string;
   defaultValue: string;
   action: ColumnAction;
+  /* Sort order — exposed in the create grid as "Column Sequence". */
+  sortOrder?: number;
+  /* Extended enterprise metadata. All optional so existing rows from before
+     migration 8 still load cleanly. Defaults are applied by the Create Table
+     grid when a user adds a new row. */
+  attributeName?: string;
+  hasStats?: boolean;
+  compressValue?: string;
+  columnFormat?: string;
+  comments?: string;
+  sourceTableName?: string;
+  sourceColumnName?: string;
+  transformation?: string;
+  tierValue?: string;
+  sourceSystem?: string;
+  encoding?: string;
+  isSortKey?: boolean;
+  isDistKey?: boolean;
+  sourceDatabaseName?: string;
 }
 
 export interface EnvironmentState {

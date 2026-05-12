@@ -1,4 +1,4 @@
-import { Pool } from 'pg';
+import { Pool, PoolClient } from 'pg';
 import dotenv from 'dotenv';
 
 dotenv.config();
@@ -70,4 +70,44 @@ export const query = async (text: string, params?: any[]) => {
   return p.query(text, params);
 };
 
-export default { getPool, query };
+/**
+ * Minimal executor shape models share — accepts either the module-level
+ * `query` (one-shot, auto-released connection) or a transaction-bound client.
+ * Model helpers default to the module `query`; callers wanting a transaction
+ * pass the client surfaced by `withTransaction`.
+ */
+export type Executor = {
+  query: (text: string, params?: any[]) => Promise<any>;
+};
+
+export const defaultExecutor: Executor = { query };
+
+/**
+ * Run `fn` inside a single Postgres transaction. The executor passed to `fn`
+ * is bound to one checked-out pool client, so every query inside the closure
+ * shares the same connection and the same BEGIN/COMMIT scope. Any thrown
+ * error triggers ROLLBACK; the client is always released.
+ */
+export const withTransaction = async <T>(
+  fn: (executor: Executor) => Promise<T>
+): Promise<T> => {
+  const p = await getPool();
+  const client: PoolClient = await p.connect();
+  try {
+    await client.query('BEGIN');
+    const result = await fn({ query: (text, params) => client.query(text, params) });
+    await client.query('COMMIT');
+    return result;
+  } catch (err) {
+    try {
+      await client.query('ROLLBACK');
+    } catch (rollbackErr) {
+      console.error('Transaction rollback failed', rollbackErr);
+    }
+    throw err;
+  } finally {
+    client.release();
+  }
+};
+
+export default { getPool, query, withTransaction };
