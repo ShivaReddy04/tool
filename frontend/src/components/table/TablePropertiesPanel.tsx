@@ -1,9 +1,11 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useAuth } from "../../context/AuthContext";
 import { useDashboard } from "../../context/DashboardContext";
-import { Card, Button, Badge, TextInput, Select, BusinessAreaSelector } from "../common";
+import { Card, Button, Badge, TextInput, Select } from "../common";
 import {
+  BUSINESS_AREA_OPTIONS,
   VERTICAL_NAME_OPTIONS,
+  type BusinessArea,
   type DistributionStyle,
   type TableDefinition,
   type VerticalName,
@@ -18,6 +20,7 @@ const DISTRIBUTION_OPTIONS: { value: DistributionStyle; label: string }[] = [
 ];
 
 const VERTICAL_OPTIONS = VERTICAL_NAME_OPTIONS.map((v) => ({ value: v, label: v }));
+const BUSINESS_AREA_DROPDOWN_OPTIONS = BUSINESS_AREA_OPTIONS.map((v) => ({ value: v, label: v }));
 
 const buildVerticalOptions = (current: string) => {
   // Existing rows may carry a free-text vertical that pre-dates the dropdown
@@ -92,6 +95,11 @@ export const TablePropertiesPanel: React.FC = () => {
       addToast("error", schemaCheck.error || "Schema name is invalid.");
       return;
     }
+    if (!draft.businessArea) {
+      setShowErrors(true);
+      addToast("error", "Business Area is required.");
+      return;
+    }
 
     setSaving(true);
     // Push the draft into the global table definition so saveChanges sees it.
@@ -120,6 +128,7 @@ export const TablePropertiesPanel: React.FC = () => {
     { label: "Schema Name", value: tableDefinition.schemaName },
     { label: "Distribution Style", value: tableDefinition.distributionStyle },
     { label: "Vertical Name", value: tableDefinition.verticalName },
+    { label: "Business Area", value: tableDefinition.businessArea || "" },
     { label: "Total Columns", value: columns.length.toString() },
   ];
 
@@ -200,15 +209,15 @@ export const TablePropertiesPanel: React.FC = () => {
             onChange={(v) => updateDraft({ verticalName: v as VerticalName })}
             placeholder="Select vertical"
           />
-          <div>
-            <div className="text-xs font-medium text-slate-600 uppercase tracking-wide mb-2">
-              Business Area
-            </div>
-            <BusinessAreaSelector
-              value={draft.businessAreaId || ""}
-              onChange={(id) => updateDraft({ businessAreaId: id })}
-            />
-          </div>
+          <Select
+            label="Business Area"
+            options={BUSINESS_AREA_DROPDOWN_OPTIONS}
+            value={draft.businessArea || ""}
+            onChange={(v) => updateDraft({ businessArea: v as BusinessArea })}
+            placeholder="Select Business Area"
+            required
+            error={showErrors && !draft.businessArea ? "Business Area is required" : undefined}
+          />
         </div>
       ) : (
         <div className="space-y-3">

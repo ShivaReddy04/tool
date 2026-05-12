@@ -4,7 +4,6 @@ import { useAuth } from "./AuthContext";
 import type {
   Cluster,
   Schema,
-  BusinessArea,
   TableSummary,
   TableDefinition,
   ColumnDefinition,
@@ -18,18 +17,14 @@ interface DashboardContextType {
   // Environment
   clusters: Cluster[];
   schemas: Schema[];
-  businessAreas: BusinessArea[];
   selectedClusterId: string;
   selectedDatabaseId: string;
   selectedSchemaId: string;
-  selectedBusinessAreaId: string;
   setClusters: (clusters: Cluster[]) => void;
   setSchemas: (schemas: Schema[]) => void;
-  setBusinessAreas: (areas: BusinessArea[]) => void;
   setSelectedClusterId: (id: string) => void;
   setSelectedDatabaseId: (id: string) => void;
   setSelectedSchemaId: (id: string) => void;
-  setSelectedBusinessAreaId: (id: string) => void;
 
   // Tables
   tables: TableSummary[];
@@ -202,7 +197,7 @@ function pendingSubmissionToNotification(s: any): Notification {
     distributionStyle: tablePayload.distribution_style || "AUTO",
     schemaName: tablePayload.schema_name || "",
     verticalName: tablePayload.vertical_name || "",
-    businessAreaId: tablePayload.business_area_id || "",
+    businessArea: tablePayload.business_area || "",
     columns: [],
   };
 
@@ -236,11 +231,9 @@ export const DashboardProvider: React.FC<{ children: React.ReactNode }> = ({
   // Environment state — seeded with mock data
   const [clusters, setClusters] = useState<Cluster[]>([]);
   const [schemas, setSchemas] = useState<Schema[]>([]);
-  const [businessAreas, setBusinessAreas] = useState<BusinessArea[]>([]);
   const [selectedClusterId, setSelectedClusterId] = useState(persisted?.selectedClusterId ?? "");
   const [selectedDatabaseId, setSelectedDatabaseId] = useState(persisted?.selectedDatabaseId ?? "");
   const [selectedSchemaId, setSelectedSchemaId] = useState(persisted?.selectedSchemaId ?? "");
-  const [selectedBusinessAreaId, setSelectedBusinessAreaId] = useState(persisted?.selectedBusinessAreaId ?? "");
 
   // Table state
   const [tables, setTables] = useState<TableSummary[]>(persisted?.tables ?? []);
@@ -280,7 +273,6 @@ export const DashboardProvider: React.FC<{ children: React.ReactNode }> = ({
       selectedClusterId,
       selectedDatabaseId,
       selectedSchemaId,
-      selectedBusinessAreaId,
       tables,
       selectedTableId,
       tableDefinition,
@@ -290,7 +282,7 @@ export const DashboardProvider: React.FC<{ children: React.ReactNode }> = ({
       submissionStatus,
       notifications,
     });
-  }, [selectedClusterId, selectedDatabaseId, selectedSchemaId, selectedBusinessAreaId, tables, selectedTableId, tableDefinition, columns, currentStep, hasUnsavedChanges, submissionStatus, notifications]);
+  }, [selectedClusterId, selectedDatabaseId, selectedSchemaId, tables, selectedTableId, tableDefinition, columns, currentStep, hasUnsavedChanges, submissionStatus, notifications]);
 
   // Warn user before unloading page if there are unsaved changes
   useEffect(() => {
@@ -382,7 +374,7 @@ export const DashboardProvider: React.FC<{ children: React.ReactNode }> = ({
         entity_logical_name: tableDefinition.entityLogicalName,
         distribution_style: tableDefinition.distributionStyle,
         vertical_name: tableDefinition.verticalName,
-        business_area_id: tableDefinition.businessAreaId || selectedBusinessAreaId || undefined,
+        business_area: tableDefinition.businessArea || undefined,
         status: submissionStatus
       };
 
@@ -418,7 +410,7 @@ export const DashboardProvider: React.FC<{ children: React.ReactNode }> = ({
       addToast("error", parts.join(" "));
       return null;
     }
-  }, [tableDefinition, columns, selectedClusterId, selectedDatabaseId, selectedSchemaId, selectedBusinessAreaId, submissionStatus, addToast]);
+  }, [tableDefinition, columns, selectedClusterId, selectedDatabaseId, selectedSchemaId, submissionStatus, addToast]);
 
 
   const submitForReview = useCallback(
@@ -585,7 +577,7 @@ export const DashboardProvider: React.FC<{ children: React.ReactNode }> = ({
         entity_logical_name: def.entityLogicalName,
         distribution_style: def.distributionStyle,
         vertical_name: def.verticalName,
-        business_area_id: def.businessAreaId || selectedBusinessAreaId || undefined,
+        business_area: def.businessArea || undefined,
         status: "draft",
       };
 
@@ -617,7 +609,7 @@ export const DashboardProvider: React.FC<{ children: React.ReactNode }> = ({
           distributionStyle: saved.distribution_style || "AUTO",
           schemaName: saved.schema_name || "",
           verticalName: saved.vertical_name || "",
-          businessAreaId: saved.business_area_id || "",
+          businessArea: saved.business_area || "",
           columns: savedColumns,
         });
         setColumns(savedColumns);
@@ -642,7 +634,6 @@ export const DashboardProvider: React.FC<{ children: React.ReactNode }> = ({
       selectedClusterId,
       selectedDatabaseId,
       selectedSchemaId,
-      selectedBusinessAreaId,
       addToast,
     ]
   );
@@ -650,18 +641,8 @@ export const DashboardProvider: React.FC<{ children: React.ReactNode }> = ({
   // Refresh metadata — reload clusters, schemas, and tables
   const refreshMetadata = useCallback(async () => {
     try {
-      const [clusterRes, areaRes] = await Promise.all([
-        api.get("/clusters"),
-        api.get("/business-areas")
-      ]);
+      const clusterRes = await api.get("/clusters");
       setClusters(clusterRes.data);
-      setBusinessAreas(areaRes.data.map((a: any) => ({
-        id: a.id,
-        name: a.name,
-        description: a.description,
-        parentId: a.parent_id ?? null,
-        level: a.level,
-      })));
       addToast("success", "Metadata refreshed.");
     } catch (err) {
       console.error(err);
@@ -770,7 +751,7 @@ export const DashboardProvider: React.FC<{ children: React.ReactNode }> = ({
               distributionStyle: 'AUTO',
               schemaName: schema,
               verticalName: '',
-              businessAreaId: '',
+              businessArea: '',
               columns: []
             });
             setColumns(cols.map((c: any) =>
@@ -803,7 +784,7 @@ export const DashboardProvider: React.FC<{ children: React.ReactNode }> = ({
               distributionStyle: res.data.table.distribution_style || 'AUTO',
               schemaName: res.data.table.schema_name || '',
               verticalName: res.data.table.vertical_name || '',
-              businessAreaId: res.data.table.business_area_id || '',
+              businessArea: res.data.table.business_area || '',
               columns: res.data.columns
             });
             setColumns(res.data.columns.map(columnFromServer));
@@ -898,7 +879,7 @@ export const DashboardProvider: React.FC<{ children: React.ReactNode }> = ({
         distributionStyle: res.data.table.distribution_style || 'AUTO',
         schemaName: res.data.table.schema_name || '',
         verticalName: res.data.table.vertical_name || '',
-        businessAreaId: res.data.table.business_area_id || '',
+        businessArea: res.data.table.business_area || '',
         columns: res.data.columns
       });
       setColumns(res.data.columns.map(columnFromServer));
@@ -917,7 +898,6 @@ export const DashboardProvider: React.FC<{ children: React.ReactNode }> = ({
     setSelectedClusterId("");
     setSelectedDatabaseId("");
     setSelectedSchemaId("");
-    setSelectedBusinessAreaId("");
     setSchemas([]);
     setTables([]);
     setSelectedTableId("");
@@ -943,18 +923,14 @@ export const DashboardProvider: React.FC<{ children: React.ReactNode }> = ({
       value={{
         clusters,
         schemas,
-        businessAreas,
         selectedClusterId,
         selectedDatabaseId,
         selectedSchemaId,
-        selectedBusinessAreaId,
         setClusters,
         setSchemas,
-        setBusinessAreas,
         setSelectedClusterId,
         setSelectedDatabaseId,
         setSelectedSchemaId,
-        setSelectedBusinessAreaId,
         tables,
         selectedTableId,
         tableDefinition,

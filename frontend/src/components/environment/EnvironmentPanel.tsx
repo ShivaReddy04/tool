@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { useDashboard } from "../../context/DashboardContext";
-import { Card, Select, Button, Badge, BusinessAreaSelector } from "../common";
+import { Card, Select, Button, Badge } from "../common";
 import { AddConnectionDrawer } from "./AddConnectionDrawer";
 import {
   listConnections,
@@ -19,8 +19,6 @@ const DB_TYPE_LABELS: Record<string, string> = {
 
 export const EnvironmentPanel: React.FC = () => {
   const {
-    selectedBusinessAreaId,
-    setSelectedBusinessAreaId,
     setTables,
     setSelectedTableId,
     setTableDefinition,
@@ -270,16 +268,6 @@ export const EnvironmentPanel: React.FC = () => {
               {loadingTables ? "Loading tables..." : `${tableCount} table${tableCount !== 1 ? "s" : ""} found`}
             </div>
           )}
-
-          <div className="border-t border-slate-100 pt-4">
-            <div className="text-xs font-semibold text-slate-700 mb-2 uppercase tracking-wide">
-              Business Area
-            </div>
-            <BusinessAreaSelector
-              value={selectedBusinessAreaId}
-              onChange={(id) => setSelectedBusinessAreaId(id)}
-            />
-          </div>
 
           <Button
             variant="outline"

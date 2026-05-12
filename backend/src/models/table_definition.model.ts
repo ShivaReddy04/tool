@@ -10,7 +10,7 @@ export interface TableDefinition {
     distribution_style?: 'KEY' | 'EVEN' | 'ALL' | 'AUTO';
     keys?: string;
     vertical_name?: string;
-    business_area_id?: string;
+    business_area?: 'XBI Tables' | 'Database Source';
     status: 'draft' | 'submitted' | 'approved' | 'rejected' | 'applied' | 'processed';
     created_by?: string;
     reviewed_by?: string;
@@ -47,16 +47,16 @@ export const createOrUpdateTableDefinition = async (
         // touched on update so historical values are not silently nulled.
         const result = await executor.query(
             `UPDATE table_definitions SET
-        entity_logical_name = $1, distribution_style = $2, vertical_name = $3, business_area_id = $4, status = $5, updated_at = CURRENT_TIMESTAMP
+        entity_logical_name = $1, distribution_style = $2, vertical_name = $3, business_area = $4, status = $5, updated_at = CURRENT_TIMESTAMP
        WHERE id = $6 RETURNING *`,
-            [tableDef.entity_logical_name, tableDef.distribution_style, tableDef.vertical_name, tableDef.business_area_id, tableDef.status || 'draft', effectiveId]
+            [tableDef.entity_logical_name, tableDef.distribution_style, tableDef.vertical_name, tableDef.business_area, tableDef.status || 'draft', effectiveId]
         );
         return result.rows[0];
     } else {
         const result = await executor.query(
-            `INSERT INTO table_definitions (connection_id, database_name, schema_name, table_name, entity_logical_name, distribution_style, vertical_name, business_area_id, status, created_by)
+            `INSERT INTO table_definitions (connection_id, database_name, schema_name, table_name, entity_logical_name, distribution_style, vertical_name, business_area, status, created_by)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING *`,
-            [tableDef.connection_id, tableDef.database_name, tableDef.schema_name, tableDef.table_name, tableDef.entity_logical_name, tableDef.distribution_style, tableDef.vertical_name, tableDef.business_area_id, 'draft', tableDef.created_by]
+            [tableDef.connection_id, tableDef.database_name, tableDef.schema_name, tableDef.table_name, tableDef.entity_logical_name, tableDef.distribution_style, tableDef.vertical_name, tableDef.business_area, 'draft', tableDef.created_by]
         );
         return result.rows[0];
     }

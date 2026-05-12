@@ -35,15 +35,12 @@ export interface Schema {
   clusterId: string;
 }
 
-export type BusinessAreaLevel = "domain" | "business_area" | "sub_area";
-
-export interface BusinessArea {
-  id: string;
-  name: string;
-  description?: string;
-  parentId?: string | null;
-  level?: BusinessAreaLevel;
-}
+/**
+ * Fixed allow-list for the simplified Business Area attribute on a table.
+ * Mirrors the CHECK constraint on `table_definitions.business_area`.
+ */
+export const BUSINESS_AREA_OPTIONS = ["XBI Tables", "Database Source"] as const;
+export type BusinessArea = (typeof BUSINESS_AREA_OPTIONS)[number] | "";
 
 export interface TableSummary {
   id: string;
@@ -72,7 +69,7 @@ export interface TableDefinition {
   /** @deprecated Replaced by `schemaName`. Retained for backward compatibility with old payloads. */
   keys?: string;
   verticalName: VerticalName | string;
-  businessAreaId?: string;
+  businessArea?: BusinessArea;
   columns: ColumnDefinition[];
 }
 
@@ -135,7 +132,6 @@ export interface ColumnDefinition {
 export interface EnvironmentState {
   selectedClusterId: string;
   selectedSchemaId: string;
-  selectedBusinessAreaId: string;
 }
 
 export interface ValidationError {

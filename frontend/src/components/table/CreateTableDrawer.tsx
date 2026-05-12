@@ -9,7 +9,9 @@ import {
 import api from "../../api/client";
 import { sanitizeSchemaInput, validateIdentifier, validateSchemaName } from "../../utils/validation";
 import {
+  BUSINESS_AREA_OPTIONS,
   VERTICAL_NAME_OPTIONS,
+  type BusinessArea,
   type TableDefinition,
   type ColumnDefinition,
   type DistributionStyle,
@@ -24,6 +26,7 @@ const DISTRIBUTION_OPTIONS = [
 ];
 
 const VERTICAL_OPTIONS = VERTICAL_NAME_OPTIONS.map((v) => ({ value: v, label: v }));
+const BUSINESS_AREA_DROPDOWN_OPTIONS = BUSINESS_AREA_OPTIONS.map((v) => ({ value: v, label: v }));
 
 const ACTION_OPTIONS: { value: string; label: string }[] = [
   { value: "Add", label: "Add" },
@@ -309,6 +312,7 @@ const buildInitialFormState = (defaultSchema: string): CreateTableFormState => (
   distributionStyle: "KEY",
   schemaName: defaultSchema,
   verticalName: "",
+  businessArea: "",
 });
 
 export const CreateTableDrawer: React.FC = () => {
@@ -476,6 +480,7 @@ export const CreateTableDrawer: React.FC = () => {
     tableNameValidation.valid &&
     !!formData.entityLogicalName.trim() &&
     schemaValidation.valid &&
+    !!formData.businessArea &&
     namedColumns.length > 0 &&
     duplicateColumnNames.size === 0;
 
@@ -493,6 +498,10 @@ export const CreateTableDrawer: React.FC = () => {
     }
     if (!schemaValidation.valid) {
       setSubmitError(schemaValidation.error || "Invalid schema name");
+      return;
+    }
+    if (!formData.businessArea) {
+      setSubmitError("Business Area is required");
       return;
     }
     if (namedColumns.length === 0) {
@@ -634,6 +643,21 @@ export const CreateTableDrawer: React.FC = () => {
               value={formData.verticalName}
               onChange={(v) => updateFormField("verticalName", v)}
               placeholder="Select vertical"
+            />
+            <Select
+              label="Business Area"
+              options={BUSINESS_AREA_DROPDOWN_OPTIONS}
+              value={formData.businessArea || ""}
+              onChange={(v) =>
+                setFormData((prev) => ({ ...prev, businessArea: v as BusinessArea }))
+              }
+              placeholder="Select Business Area"
+              required
+              error={
+                showErrors && !formData.businessArea
+                  ? "Business Area is required"
+                  : undefined
+              }
             />
           </div>
         </div>

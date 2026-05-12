@@ -8,6 +8,7 @@ import { validateSchemaName, validateIdentifier } from '../utils/validation';
 import { withTransaction } from '../config/db';
 
 const VALID_DISTRIBUTION_STYLES = new Set(['KEY', 'EVEN', 'ALL', 'AUTO']);
+const VALID_BUSINESS_AREAS = new Set(['XBI Tables', 'Database Source']);
 
 export const saveTableDefinition = async (req: Request, res: Response): Promise<void> => {
     try {
@@ -58,6 +59,17 @@ export const saveTableDefinition = async (req: Request, res: Response): Promise<
         // name in the response.
         if (table.distribution_style && !VALID_DISTRIBUTION_STYLES.has(table.distribution_style)) {
             res.status(400).json({ error: 'Invalid distribution_style', field: 'distribution_style' });
+            return;
+        }
+
+        // business_area is required, single-select, with a fixed allow-list
+        // enforced both at the DB (CHECK constraint) and here so the response
+        // is a clean 400 instead of a 23514 from Postgres.
+        if (!table.business_area || !VALID_BUSINESS_AREAS.has(table.business_area)) {
+            res.status(400).json({
+                error: 'Business Area is required and must be one of: XBI Tables, Database Source',
+                field: 'business_area',
+            });
             return;
         }
 

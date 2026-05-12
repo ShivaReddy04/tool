@@ -22,7 +22,8 @@
       "PowerShell(Set-Location 'C:\\\\Users\\\\panya\\\\Desktop\\\\dart\\\\backend'; & \".\\\\node_modules\\\\.bin\\\\tsc.cmd\" --noEmit; Write-Output \"EXITCODE=$LASTEXITCODE\")",
       "PowerShell(Set-Location 'C:\\\\Users\\\\panya\\\\Desktop\\\\dart\\\\frontend'; & \".\\\\node_modules\\\\.bin\\\\tsc.cmd\" --noEmit; Write-Output \"EXITCODE=$LASTEXITCODE\")",
       "PowerShell(Get-ChildItem -Path \"C:\\\\Users\\\\panya\\\\Desktop\\\\dart\" -Exclude node_modules | Select-Object Name, @{Name=\"Type\"; Expression={if \\($_.PSIsContainer\\) {\"DIR\"} else {\"FILE\"}}} | Format-Table -AutoSize)",
-      "PowerShell(Get-ChildItem -Path \"C:\\\\Users\\\\panya\\\\Desktop\\\\dart\" -File | Where-Object {$_.Name -match \"^\\(README|CLAUDE|\\\\.env\\)\" })"
+      "PowerShell(Get-ChildItem -Path \"C:\\\\Users\\\\panya\\\\Desktop\\\\dart\" -File | Where-Object {$_.Name -match \"^\\(README|CLAUDE|\\\\.env\\)\" })",
+      "Bash(git rm *)"
     ]
   }
 }
