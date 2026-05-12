@@ -95,11 +95,6 @@ export const TablePropertiesPanel: React.FC = () => {
       addToast("error", schemaCheck.error || "Schema name is invalid.");
       return;
     }
-    if (!draft.businessArea) {
-      setShowErrors(true);
-      addToast("error", "Business Area is required.");
-      return;
-    }
 
     setSaving(true);
     // Push the draft into the global table definition so saveChanges sees it.
@@ -210,14 +205,25 @@ export const TablePropertiesPanel: React.FC = () => {
             placeholder="Select vertical"
           />
           <Select
-            label="Business Area"
+            label="Business Area (optional)"
             options={BUSINESS_AREA_DROPDOWN_OPTIONS}
             value={draft.businessArea || ""}
             onChange={(v) => updateDraft({ businessArea: v as BusinessArea })}
-            placeholder="Select Business Area"
-            required
-            error={showErrors && !draft.businessArea ? "Business Area is required" : undefined}
+            placeholder="Select if applicable"
           />
+          <div>
+            <label className="block text-xs font-medium text-slate-600 mb-1">
+              Table Definition
+              <span className="ml-1 font-normal text-slate-400">(optional)</span>
+            </label>
+            <textarea
+              value={draft.definition ?? ""}
+              onChange={(e) => updateDraft({ definition: e.target.value })}
+              placeholder="Describe what this table represents…"
+              rows={3}
+              className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 focus:border-indigo-400 focus:outline-none focus:ring-1 focus:ring-indigo-200"
+            />
+          </div>
         </div>
       ) : (
         <div className="space-y-3">
@@ -229,6 +235,12 @@ export const TablePropertiesPanel: React.FC = () => {
               </span>
             </div>
           ))}
+          <div className="pt-2 border-t border-slate-100">
+            <div className="text-xs text-slate-500 mb-1">Table Definition</div>
+            <div className="text-xs font-medium text-slate-700 whitespace-pre-wrap break-words">
+              {tableDefinition.definition || "—"}
+            </div>
+          </div>
           <div className="flex items-center justify-between gap-4 pt-2 border-t border-slate-100">
             <span className="text-xs text-slate-500">Submission Status</span>
             <Badge variant={statusVariant[submissionStatus] ?? "neutral"}>

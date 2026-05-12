@@ -144,6 +144,7 @@ export const ReviewDrawer: React.FC = () => {
                 { label: "Distribution Style", value: tableDef.distributionStyle },
                 { label: "Schema Name", value: tableDef.schemaName },
                 { label: "Vertical Name", value: tableDef.verticalName },
+                { label: "Business Area", value: tableDef.businessArea || "" },
                 { label: "Total Columns", value: cols.length.toString() },
               ].map((prop) => (
                 <div key={prop.label} className="flex items-center justify-between">
@@ -151,6 +152,14 @@ export const ReviewDrawer: React.FC = () => {
                   <span className="text-xs font-medium text-slate-700">{prop.value || "—"}</span>
                 </div>
               ))}
+              {tableDef.definition && (
+                <div className="pt-2 border-t border-slate-200">
+                  <div className="text-xs text-slate-500 mb-1">Table Definition</div>
+                  <div className="text-xs font-medium text-slate-700 whitespace-pre-wrap break-words">
+                    {tableDef.definition}
+                  </div>
+                </div>
+              )}
             </div>
           </div>
 

@@ -314,6 +314,7 @@ const buildInitialFormState = (defaultSchema: string): CreateTableFormState => (
   distributionStyle: "KEY",
   schemaName: defaultSchema,
   verticalName: "",
+  definition: "",
 });
 
 export const CreateTableDrawer: React.FC = () => {
@@ -680,6 +681,19 @@ export const CreateTableDrawer: React.FC = () => {
               value={formData.verticalName}
               onChange={(v) => updateFormField("verticalName", v)}
               placeholder="Select vertical"
+            />
+          </div>
+          <div className="mt-4">
+            <label className="block text-xs font-medium text-slate-600 mb-1">
+              Table Definition
+              <span className="ml-1 font-normal text-slate-400">(optional)</span>
+            </label>
+            <textarea
+              value={formData.definition ?? ""}
+              onChange={(e) => updateFormField("definition", e.target.value)}
+              placeholder="Describe what this table represents — purpose, ownership, key business meaning…"
+              rows={3}
+              className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 focus:border-indigo-400 focus:outline-none focus:ring-1 focus:ring-indigo-200"
             />
           </div>
           {selectedBusinessArea && (

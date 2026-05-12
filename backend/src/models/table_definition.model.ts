@@ -11,6 +11,7 @@ export interface TableDefinition {
     keys?: string;
     vertical_name?: string;
     business_area?: 'XBI Tables' | 'Database Source';
+    definition?: string;
     status: 'draft' | 'submitted' | 'approved' | 'rejected' | 'applied' | 'processed';
     created_by?: string;
     reviewed_by?: string;
@@ -47,16 +48,16 @@ export const createOrUpdateTableDefinition = async (
         // touched on update so historical values are not silently nulled.
         const result = await executor.query(
             `UPDATE table_definitions SET
-        entity_logical_name = $1, distribution_style = $2, vertical_name = $3, business_area = $4, status = $5, updated_at = CURRENT_TIMESTAMP
-       WHERE id = $6 RETURNING *`,
-            [tableDef.entity_logical_name, tableDef.distribution_style, tableDef.vertical_name, tableDef.business_area, tableDef.status || 'draft', effectiveId]
+        entity_logical_name = $1, distribution_style = $2, vertical_name = $3, business_area = $4, definition = $5, status = $6, updated_at = CURRENT_TIMESTAMP
+       WHERE id = $7 RETURNING *`,
+            [tableDef.entity_logical_name, tableDef.distribution_style, tableDef.vertical_name, tableDef.business_area, tableDef.definition ?? null, tableDef.status || 'draft', effectiveId]
         );
         return result.rows[0];
     } else {
         const result = await executor.query(
-            `INSERT INTO table_definitions (connection_id, database_name, schema_name, table_name, entity_logical_name, distribution_style, vertical_name, business_area, status, created_by)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING *`,
-            [tableDef.connection_id, tableDef.database_name, tableDef.schema_name, tableDef.table_name, tableDef.entity_logical_name, tableDef.distribution_style, tableDef.vertical_name, tableDef.business_area, 'draft', tableDef.created_by]
+            `INSERT INTO table_definitions (connection_id, database_name, schema_name, table_name, entity_logical_name, distribution_style, vertical_name, business_area, definition, status, created_by)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING *`,
+            [tableDef.connection_id, tableDef.database_name, tableDef.schema_name, tableDef.table_name, tableDef.entity_logical_name, tableDef.distribution_style, tableDef.vertical_name, tableDef.business_area, tableDef.definition ?? null, 'draft', tableDef.created_by]
         );
         return result.rows[0];
     }

@@ -70,6 +70,8 @@ export interface TableDefinition {
   keys?: string;
   verticalName: VerticalName | string;
   businessArea?: BusinessArea;
+  /** Free-text description of what the table represents. Optional. */
+  definition?: string;
   columns: ColumnDefinition[];
 }
 

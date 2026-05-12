@@ -201,6 +201,7 @@ function pendingSubmissionToNotification(s: any): Notification {
     schemaName: tablePayload.schema_name || "",
     verticalName: tablePayload.vertical_name || "",
     businessArea: tablePayload.business_area || "",
+    definition: tablePayload.definition || "",
     columns: [],
   };
 
@@ -382,6 +383,7 @@ export const DashboardProvider: React.FC<{ children: React.ReactNode }> = ({
         distribution_style: tableDefinition.distributionStyle,
         vertical_name: tableDefinition.verticalName,
         business_area: tableDefinition.businessArea || undefined,
+        definition: tableDefinition.definition || undefined,
         status: submissionStatus
       };
 
@@ -592,6 +594,7 @@ export const DashboardProvider: React.FC<{ children: React.ReactNode }> = ({
         distribution_style: def.distributionStyle,
         vertical_name: def.verticalName,
         business_area: def.businessArea || undefined,
+        definition: def.definition || undefined,
         status: "draft",
       };
 
@@ -624,6 +627,7 @@ export const DashboardProvider: React.FC<{ children: React.ReactNode }> = ({
           schemaName: saved.schema_name || "",
           verticalName: saved.vertical_name || "",
           businessArea: saved.business_area || "",
+          definition: saved.definition || "",
           columns: savedColumns,
         });
         setColumns(savedColumns);
@@ -766,6 +770,7 @@ export const DashboardProvider: React.FC<{ children: React.ReactNode }> = ({
               schemaName: schema,
               verticalName: '',
               businessArea: '',
+              definition: '',
               columns: []
             });
             setColumns(cols.map((c: any) =>
@@ -799,6 +804,7 @@ export const DashboardProvider: React.FC<{ children: React.ReactNode }> = ({
               schemaName: res.data.table.schema_name || '',
               verticalName: res.data.table.vertical_name || '',
               businessArea: res.data.table.business_area || '',
+              definition: res.data.table.definition || '',
               columns: res.data.columns
             });
             setColumns(res.data.columns.map(columnFromServer));
@@ -894,6 +900,7 @@ export const DashboardProvider: React.FC<{ children: React.ReactNode }> = ({
         schemaName: res.data.table.schema_name || '',
         verticalName: res.data.table.vertical_name || '',
         businessArea: res.data.table.business_area || '',
+        definition: res.data.table.definition || '',
         columns: res.data.columns
       });
       setColumns(res.data.columns.map(columnFromServer));
