@@ -8,7 +8,17 @@ import {
   fetchSchemas,
   fetchTables,
 } from "../../api/connections";
-import type { DbConnection, TableSummary } from "../../types";
+import {
+  BUSINESS_AREA_OPTIONS,
+  type BusinessArea,
+  type DbConnection,
+  type TableSummary,
+} from "../../types";
+
+const BUSINESS_AREA_DROPDOWN_OPTIONS = BUSINESS_AREA_OPTIONS.map((v) => ({
+  value: v,
+  label: v,
+}));
 
 const DB_TYPE_LABELS: Record<string, string> = {
   postgresql: "PostgreSQL",
@@ -28,6 +38,8 @@ export const EnvironmentPanel: React.FC = () => {
     selectedDatabaseId: selectedDatabase,
     setSelectedDatabaseId: setSelectedDatabase,
     setSelectedSchemaId,
+    selectedBusinessArea,
+    setSelectedBusinessArea,
   } = useDashboard();
 
   // Connection state
@@ -184,7 +196,11 @@ export const EnvironmentPanel: React.FC = () => {
   }, [selectedConnectionId, selectedDatabase, selectedSchema, setTables, setSelectedTableId, setTableDefinition, setColumns, setCurrentStep]);
 
   const selectedConn = connections.find((c) => c.id === selectedConnectionId);
-  const isReady = selectedConnectionId && selectedDatabase && selectedSchema;
+  const isReady =
+    !!selectedConnectionId &&
+    !!selectedDatabase &&
+    !!selectedSchema &&
+    !!selectedBusinessArea;
 
   const connectionOptions = connections.map((c) => ({
     value: c.id,
@@ -269,6 +285,20 @@ export const EnvironmentPanel: React.FC = () => {
             </div>
           )}
 
+          {/* Business Area lives at the environment level: it scopes the tables
+              a developer is about to create or edit, so it belongs alongside
+              cluster/schema rather than in per-table metadata. */}
+          {selectedSchema && (
+            <Select
+              label="Business Area"
+              options={BUSINESS_AREA_DROPDOWN_OPTIONS}
+              value={selectedBusinessArea}
+              onChange={(v) => setSelectedBusinessArea(v as BusinessArea)}
+              placeholder="Select Business Area"
+              required
+            />
+          )}
+
           <Button
             variant="outline"
             size="sm"
@@ -319,6 +349,12 @@ export const EnvironmentPanel: React.FC = () => {
             <div className="flex items-center justify-between">
               <span className="text-xs text-slate-500">Schema</span>
               <span className="text-xs font-medium text-slate-700">{selectedSchema}</span>
+            </div>
+          )}
+          {selectedBusinessArea && (
+            <div className="flex items-center justify-between">
+              <span className="text-xs text-slate-500">Business Area</span>
+              <span className="text-xs font-medium text-slate-700">{selectedBusinessArea}</span>
             </div>
           )}
         </div>

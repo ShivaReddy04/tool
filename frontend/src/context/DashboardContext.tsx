@@ -10,6 +10,7 @@ import type {
   Step,
   Notification,
   SubmissionStatus,
+  BusinessArea,
 } from "../types";
 import type { ToastData } from "../components/common/Toast";
 
@@ -20,11 +21,13 @@ interface DashboardContextType {
   selectedClusterId: string;
   selectedDatabaseId: string;
   selectedSchemaId: string;
+  selectedBusinessArea: BusinessArea;
   setClusters: (clusters: Cluster[]) => void;
   setSchemas: (schemas: Schema[]) => void;
   setSelectedClusterId: (id: string) => void;
   setSelectedDatabaseId: (id: string) => void;
   setSelectedSchemaId: (id: string) => void;
+  setSelectedBusinessArea: (area: BusinessArea) => void;
 
   // Tables
   tables: TableSummary[];
@@ -234,6 +237,9 @@ export const DashboardProvider: React.FC<{ children: React.ReactNode }> = ({
   const [selectedClusterId, setSelectedClusterId] = useState(persisted?.selectedClusterId ?? "");
   const [selectedDatabaseId, setSelectedDatabaseId] = useState(persisted?.selectedDatabaseId ?? "");
   const [selectedSchemaId, setSelectedSchemaId] = useState(persisted?.selectedSchemaId ?? "");
+  const [selectedBusinessArea, setSelectedBusinessArea] = useState<BusinessArea>(
+    persisted?.selectedBusinessArea ?? ""
+  );
 
   // Table state
   const [tables, setTables] = useState<TableSummary[]>(persisted?.tables ?? []);
@@ -273,6 +279,7 @@ export const DashboardProvider: React.FC<{ children: React.ReactNode }> = ({
       selectedClusterId,
       selectedDatabaseId,
       selectedSchemaId,
+      selectedBusinessArea,
       tables,
       selectedTableId,
       tableDefinition,
@@ -282,7 +289,7 @@ export const DashboardProvider: React.FC<{ children: React.ReactNode }> = ({
       submissionStatus,
       notifications,
     });
-  }, [selectedClusterId, selectedDatabaseId, selectedSchemaId, tables, selectedTableId, tableDefinition, columns, currentStep, hasUnsavedChanges, submissionStatus, notifications]);
+  }, [selectedClusterId, selectedDatabaseId, selectedSchemaId, selectedBusinessArea, tables, selectedTableId, tableDefinition, columns, currentStep, hasUnsavedChanges, submissionStatus, notifications]);
 
   // Warn user before unloading page if there are unsaved changes
   useEffect(() => {
@@ -898,6 +905,7 @@ export const DashboardProvider: React.FC<{ children: React.ReactNode }> = ({
     setSelectedClusterId("");
     setSelectedDatabaseId("");
     setSelectedSchemaId("");
+    setSelectedBusinessArea("");
     setSchemas([]);
     setTables([]);
     setSelectedTableId("");
@@ -926,11 +934,13 @@ export const DashboardProvider: React.FC<{ children: React.ReactNode }> = ({
         selectedClusterId,
         selectedDatabaseId,
         selectedSchemaId,
+        selectedBusinessArea,
         setClusters,
         setSchemas,
         setSelectedClusterId,
         setSelectedDatabaseId,
         setSelectedSchemaId,
+        setSelectedBusinessArea,
         tables,
         selectedTableId,
         tableDefinition,

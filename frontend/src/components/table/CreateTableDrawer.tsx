@@ -12,9 +12,7 @@ import {
 import api from "../../api/client";
 import { sanitizeSchemaInput, validateIdentifier, validateSchemaName } from "../../utils/validation";
 import {
-  BUSINESS_AREA_OPTIONS,
   VERTICAL_NAME_OPTIONS,
-  type BusinessArea,
   type TableDefinition,
   type ColumnDefinition,
   type DistributionStyle,
@@ -29,7 +27,6 @@ const DISTRIBUTION_OPTIONS = [
 ];
 
 const VERTICAL_OPTIONS = VERTICAL_NAME_OPTIONS.map((v) => ({ value: v, label: v }));
-const BUSINESS_AREA_DROPDOWN_OPTIONS = BUSINESS_AREA_OPTIONS.map((v) => ({ value: v, label: v }));
 
 const ACTION_OPTIONS: { value: string; label: string }[] = [
   { value: "Add", label: "Add" },
@@ -307,7 +304,9 @@ const META_FIELDS: MetaFieldSpec[] = [
   },
 ];
 
-type CreateTableFormState = Omit<TableDefinition, "columns">;
+// businessArea is sourced from DashboardContext (the environment-level
+// selection), not collected per-table — so it's omitted from the form state.
+type CreateTableFormState = Omit<TableDefinition, "columns" | "businessArea">;
 
 const buildInitialFormState = (defaultSchema: string): CreateTableFormState => ({
   tableName: "",
@@ -315,7 +314,6 @@ const buildInitialFormState = (defaultSchema: string): CreateTableFormState => (
   distributionStyle: "KEY",
   schemaName: defaultSchema,
   verticalName: "",
-  businessArea: "",
 });
 
 export const CreateTableDrawer: React.FC = () => {
@@ -325,6 +323,7 @@ export const CreateTableDrawer: React.FC = () => {
     createTable,
     submitForReview,
     selectedSchemaId,
+    selectedBusinessArea,
   } = useDashboard();
   const { user } = useAuth();
 
@@ -492,7 +491,7 @@ export const CreateTableDrawer: React.FC = () => {
     tableNameValidation.valid &&
     !!formData.entityLogicalName.trim() &&
     schemaValidation.valid &&
-    !!formData.businessArea &&
+    !!selectedBusinessArea &&
     !!selectedArchitect &&
     namedColumns.length > 0 &&
     duplicateColumnNames.size === 0;
@@ -513,8 +512,10 @@ export const CreateTableDrawer: React.FC = () => {
       setSubmitError(schemaValidation.error || "Invalid schema name");
       return;
     }
-    if (!formData.businessArea) {
-      setSubmitError("Business Area is required");
+    if (!selectedBusinessArea) {
+      setSubmitError(
+        "Select a Business Area in the Environment panel before creating a table"
+      );
       return;
     }
     if (!selectedArchitect) {
@@ -544,6 +545,7 @@ export const CreateTableDrawer: React.FC = () => {
         ...formData,
         tableName: tableNameValidation.sanitized,
         schemaName: schemaValidation.sanitized,
+        businessArea: selectedBusinessArea,
         columns: namedColumns,
       });
       if (!tableId) {
@@ -686,21 +688,18 @@ export const CreateTableDrawer: React.FC = () => {
               onChange={(v) => updateFormField("verticalName", v)}
               placeholder="Select vertical"
             />
-            <Select
-              label="Business Area"
-              options={BUSINESS_AREA_DROPDOWN_OPTIONS}
-              value={formData.businessArea || ""}
-              onChange={(v) =>
-                setFormData((prev) => ({ ...prev, businessArea: v as BusinessArea }))
-              }
-              placeholder="Select Business Area"
-              required
-              error={
-                showErrors && !formData.businessArea
-                  ? "Business Area is required"
-                  : undefined
-              }
-            />
+          </div>
+          <div className="mt-3 rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-xs">
+            <span className="text-slate-500">Business Area:&nbsp;</span>
+            {selectedBusinessArea ? (
+              <span className="font-medium text-slate-700">
+                {selectedBusinessArea}
+              </span>
+            ) : (
+              <span className={showErrors ? "text-red-600" : "text-slate-500"}>
+                Not selected — pick one in the Environment panel.
+              </span>
+            )}
           </div>
         </div>
 
