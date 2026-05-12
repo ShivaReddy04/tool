@@ -11,6 +11,10 @@ import {
   type VerticalName,
 } from "../../types";
 import { sanitizeSchemaInput, validateSchemaName } from "../../utils/validation";
+import {
+  generateEntityLogicalName,
+  generateTableName,
+} from "../../utils/abbreviations";
 
 const DISTRIBUTION_OPTIONS: { value: DistributionStyle; label: string }[] = [
   { value: "KEY", label: "KEY" },
@@ -169,14 +173,24 @@ export const TablePropertiesPanel: React.FC = () => {
           <TextInput
             label="Table Name"
             value={draft.tableName}
-            onChange={(e) => updateDraft({ tableName: e.target.value })}
+            onChange={(e) =>
+              updateDraft({
+                tableName: e.target.value,
+                entityLogicalName: generateEntityLogicalName(e.target.value),
+              })
+            }
             required
             error={showErrors && !draft.tableName.trim() ? "Table name is required" : undefined}
           />
           <TextInput
             label="Entity Logical Name"
             value={draft.entityLogicalName}
-            onChange={(e) => updateDraft({ entityLogicalName: e.target.value })}
+            onChange={(e) =>
+              updateDraft({
+                entityLogicalName: e.target.value,
+                tableName: generateTableName(e.target.value),
+              })
+            }
           />
           <TextInput
             label="Schema Name"

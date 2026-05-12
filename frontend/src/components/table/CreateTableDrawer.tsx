@@ -336,8 +336,6 @@ export const CreateTableDrawer: React.FC = () => {
     createEmptyColumn(0),
   ]);
 
-  const [tableNameTouched, setTableNameTouched] = useState(false);
-  const [entityNameTouched, setEntityNameTouched] = useState(false);
   // Tracks whether the user has manually edited Schema Name. While untouched,
   // the field stays in sync with the env-selected schema so reopening the
   // drawer for a different schema doesn't show a stale value.
@@ -406,35 +404,26 @@ export const CreateTableDrawer: React.FC = () => {
     setFormData((prev) => ({ ...prev, schemaName: cleaned }));
   }, []);
 
-  // Bidirectional sync: typing on one side regenerates the other via the
-  // enterprise abbreviation dictionary. Each side stops auto-syncing once
-  // its own "touched" flag is set, which is what prevents the classic
-  // ping-pong: the side currently being edited can never overwrite itself.
-  const handleTableNameChange = useCallback(
-    (raw: string) => {
-      setTableNameTouched(raw.length > 0);
-      setFormData((prev) => ({
-        ...prev,
-        tableName: raw,
-        entityLogicalName: entityNameTouched
-          ? prev.entityLogicalName
-          : generateEntityLogicalName(raw),
-      }));
-    },
-    [entityNameTouched]
-  );
+  // Bidirectional sync: typing on one side always regenerates the other via
+  // the enterprise abbreviation dictionary. The field being edited is the
+  // source of truth for this keystroke; the other is derived. No "touched"
+  // gate — if the user wants a custom value on side B, they edit side B
+  // *last* and don't go back to side A.
+  const handleTableNameChange = useCallback((raw: string) => {
+    setFormData((prev) => ({
+      ...prev,
+      tableName: raw,
+      entityLogicalName: generateEntityLogicalName(raw),
+    }));
+  }, []);
 
-  const handleEntityNameChange = useCallback(
-    (raw: string) => {
-      setEntityNameTouched(raw.length > 0);
-      setFormData((prev) => ({
-        ...prev,
-        entityLogicalName: raw,
-        tableName: tableNameTouched ? prev.tableName : generateTableName(raw),
-      }));
-    },
-    [tableNameTouched]
-  );
+  const handleEntityNameChange = useCallback((raw: string) => {
+    setFormData((prev) => ({
+      ...prev,
+      entityLogicalName: raw,
+      tableName: generateTableName(raw),
+    }));
+  }, []);
 
   // Hydrate the in-memory dictionary from the backend once per drawer mount.
   // The default shipped with the bundle keeps the UI usable offline; the
@@ -479,8 +468,6 @@ export const CreateTableDrawer: React.FC = () => {
     setIsCreateTableDrawerOpen(false);
     setFormData(buildInitialFormState(selectedSchemaId || ""));
     setNewColumns([createEmptyColumn(0)]);
-    setTableNameTouched(false);
-    setEntityNameTouched(false);
     setSchemaNameTouched(false);
     setShowErrors(false);
     setIsSaving(false);
@@ -627,9 +614,8 @@ export const CreateTableDrawer: React.FC = () => {
                 }
               />
               <p className="mt-1 text-[11px] text-slate-500">
-                {tableNameTouched
-                  ? "Manual entry — auto-sync from Entity Logical Name paused."
-                  : "Auto-generated from Entity Logical Name using abbreviations."}
+                Editing this regenerates Entity Logical Name using the
+                abbreviation dictionary.
               </p>
             </div>
             <div>
@@ -646,9 +632,7 @@ export const CreateTableDrawer: React.FC = () => {
                 }
               />
               <p className="mt-1 text-[11px] text-slate-500">
-                {entityNameTouched
-                  ? "Manual entry — auto-sync from Table Name paused."
-                  : "Auto-generated from Table Name by expanding abbreviations."}
+                Editing this regenerates Table Name by abbreviating each word.
               </p>
             </div>
             <Select

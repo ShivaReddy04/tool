@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import { useDashboard } from "../../context/DashboardContext";
 import { Card, Select, Button, Badge } from "../common";
 import { AddConnectionDrawer } from "./AddConnectionDrawer";
@@ -34,35 +34,33 @@ export const EnvironmentPanel: React.FC = () => {
     setTableDefinition,
     setColumns,
     setCurrentStep,
+    selectedClusterId,
     setSelectedClusterId,
     selectedDatabaseId: selectedDatabase,
     setSelectedDatabaseId: setSelectedDatabase,
+    selectedSchemaId,
     setSelectedSchemaId,
     selectedBusinessArea,
     setSelectedBusinessArea,
   } = useDashboard();
 
-  // Connection state
+  // The Connection/Schema selectors mirror context. The context is the source
+  // of truth (and is persisted to localStorage), so we read straight from it.
+  // Local *list* state (connections, databases, schemas, …) still lives here
+  // because it's transient and rebuilt from the API each time we mount.
+  const selectedConnectionId = selectedClusterId;
+  const selectedSchema = selectedSchemaId;
+
+  // Connection list
   const [connections, setConnections] = useState<DbConnection[]>([]);
-  const [selectedConnectionId, setSelectedConnectionId] = useState("");
 
-  // Update Context when selection changes
-  useEffect(() => {
-    setSelectedClusterId(selectedConnectionId);
-  }, [selectedConnectionId, setSelectedClusterId]);
-
-  // Cluster (database) state
+  // Cluster (database) list
   const [databases, setDatabases] = useState<string[]>([]);
   const [loadingDatabases, setLoadingDatabases] = useState(false);
 
-  // Schema state
+  // Schema list
   const [schemas, setSchemas] = useState<string[]>([]);
-  const [selectedSchema, setSelectedSchema] = useState("");
   const [loadingSchemas, setLoadingSchemas] = useState(false);
-
-  useEffect(() => {
-    setSelectedSchemaId(selectedSchema);
-  }, [selectedSchema, setSelectedSchemaId]);
 
   // Tables state
   const [loadingTables, setLoadingTables] = useState(false);
@@ -70,7 +68,20 @@ export const EnvironmentPanel: React.FC = () => {
 
   const [isAddDrawerOpen, setIsAddDrawerOpen] = useState(false);
 
-  // Load connections on mount
+  // We need to distinguish "panel just mounted with persisted selections"
+  // from "user changed the dropdown". On a fresh mount we want to fetch the
+  // dependent lists but PRESERVE the persisted selections; on a user change
+  // we clear the downstream chain. Refs track the last value we acted on, so
+  // we know whether the new effect run is mount-time or a real user edit.
+  const lastConnectionId = useRef<string | null>(null);
+  const lastDatabase = useRef<string | null>(null);
+  const lastSchema = useRef<string | null>(null);
+
+  // Refresh ticker — bumping this re-runs the entire fetch chain even when
+  // the selections themselves haven't changed.
+  const [refreshTick, setRefreshTick] = useState(0);
+
+  // Load connections on mount (and on Refresh).
   const loadConnections = useCallback(async () => {
     try {
       const data = await listConnections();
@@ -82,62 +93,91 @@ export const EnvironmentPanel: React.FC = () => {
 
   useEffect(() => {
     loadConnections();
-  }, [loadConnections]);
+  }, [loadConnections, refreshTick]);
 
-  // Load databases (clusters) when connection is selected
+  // Load databases when the connection changes (or on Refresh).
   useEffect(() => {
     if (!selectedConnectionId) {
       setDatabases([]);
-      setSelectedDatabase("");
+      setDatabase("");
       setSchemas([]);
-      setSelectedSchema("");
+      setSchemaName("");
       setTables([]);
       setTableCount(0);
+      lastConnectionId.current = "";
       return;
     }
 
+    const userChangedConnection =
+      lastConnectionId.current !== null &&
+      lastConnectionId.current !== selectedConnectionId;
+    lastConnectionId.current = selectedConnectionId;
+
     const load = async () => {
       setLoadingDatabases(true);
-      setSelectedDatabase("");
-      setSchemas([]);
-      setSelectedSchema("");
-      setTables([]);
-      setTableCount(0);
-      setSelectedTableId("");
-      setTableDefinition(null);
-      setColumns([]);
+      if (userChangedConnection) {
+        // Real user change — clear downstream so they don't see a stale
+        // db/schema/table from the previous connection.
+        setDatabase("");
+        setSchemas([]);
+        setSchemaName("");
+        setTables([]);
+        setTableCount(0);
+        setSelectedTableId("");
+        setTableDefinition(null);
+        setColumns([]);
+      }
       try {
         const data = await fetchDatabases(selectedConnectionId);
         setDatabases(data);
+        // If the persisted database is no longer valid for this connection,
+        // drop it — keeps the chain consistent without surprising the user.
+        if (selectedDatabase && !data.includes(selectedDatabase)) {
+          setDatabase("");
+        }
       } catch {
         setDatabases([]);
       }
       setLoadingDatabases(false);
     };
     load();
-  }, [selectedConnectionId, setTables, setSelectedTableId, setTableDefinition, setColumns]);
+    // selectedDatabase intentionally excluded — we read it but should not
+    // re-run this effect when only the database changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedConnectionId, refreshTick]);
 
-  // Load schemas when cluster (database) is selected
+  // Load schemas when the database changes (or on Refresh).
   useEffect(() => {
     if (!selectedConnectionId || !selectedDatabase) {
       setSchemas([]);
-      setSelectedSchema("");
+      setSchemaName("");
       setTables([]);
       setTableCount(0);
+      lastDatabase.current = "";
       return;
     }
 
+    const userChangedDatabase =
+      lastDatabase.current !== null &&
+      lastDatabase.current !== selectedDatabase;
+    lastDatabase.current = selectedDatabase;
+
     const load = async () => {
       setLoadingSchemas(true);
-      setSelectedSchema("");
-      setTables([]);
-      setTableCount(0);
-      setSelectedTableId("");
-      setTableDefinition(null);
-      setColumns([]);
+      if (userChangedDatabase) {
+        setSchemaName("");
+        setTables([]);
+        setTableCount(0);
+        setSelectedTableId("");
+        setTableDefinition(null);
+        setColumns([]);
+      }
       try {
         const data = await fetchSchemas(selectedConnectionId, selectedDatabase);
         setSchemas(data);
+        if (selectedSchema && !data.includes(selectedSchema)) {
+          setSchemaName("");
+        }
         setCurrentStep(1);
       } catch {
         setSchemas([]);
@@ -145,24 +185,29 @@ export const EnvironmentPanel: React.FC = () => {
       setLoadingSchemas(false);
     };
     load();
-  }, [selectedConnectionId, selectedDatabase, setTables, setSelectedTableId, setTableDefinition, setColumns, setCurrentStep]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedConnectionId, selectedDatabase, refreshTick]);
 
-  // Load tables when schema is selected
+  // Load tables when the schema changes (or on Refresh).
   useEffect(() => {
     if (!selectedConnectionId || !selectedDatabase || !selectedSchema) {
       setTables([]);
       setTableCount(0);
-      setSelectedTableId("");
-      setTableDefinition(null);
-      setColumns([]);
+      lastSchema.current = "";
       return;
     }
 
+    const userChangedSchema =
+      lastSchema.current !== null && lastSchema.current !== selectedSchema;
+    lastSchema.current = selectedSchema;
+
     const load = async () => {
       setLoadingTables(true);
-      setSelectedTableId("");
-      setTableDefinition(null);
-      setColumns([]);
+      if (userChangedSchema) {
+        setSelectedTableId("");
+        setTableDefinition(null);
+        setColumns([]);
+      }
       try {
         const data = await fetchTables(selectedConnectionId, selectedSchema, selectedDatabase);
         setTableCount(data.length);
@@ -193,7 +238,18 @@ export const EnvironmentPanel: React.FC = () => {
       setLoadingTables(false);
     };
     load();
-  }, [selectedConnectionId, selectedDatabase, selectedSchema, setTables, setSelectedTableId, setTableDefinition, setColumns, setCurrentStep]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedConnectionId, selectedDatabase, selectedSchema, refreshTick]);
+
+  // Local wrappers that write straight to context so the dropdowns are
+  // controlled by the persisted source of truth.
+  const setSelectedConnectionId = (v: string) => setSelectedClusterId(v);
+  const setDatabase = (v: string) => setSelectedDatabase(v);
+  const setSchemaName = (v: string) => setSelectedSchemaId(v);
+
+  const handleRefresh = useCallback(() => {
+    setRefreshTick((n) => n + 1);
+  }, []);
 
   const selectedConn = connections.find((c) => c.id === selectedConnectionId);
   const isReady = !!selectedConnectionId && !!selectedDatabase && !!selectedSchema;
@@ -268,7 +324,7 @@ export const EnvironmentPanel: React.FC = () => {
               label="Schema"
               options={schemaOptions}
               value={selectedSchema}
-              onChange={(v) => setSelectedSchema(v)}
+              onChange={(v) => setSchemaName(v)}
               placeholder={loadingSchemas ? "Loading schemas..." : "Select a schema"}
               disabled={loadingSchemas || schemas.length === 0}
               required
@@ -300,14 +356,15 @@ export const EnvironmentPanel: React.FC = () => {
             variant="outline"
             size="sm"
             fullWidth
-            onClick={loadConnections}
+            onClick={handleRefresh}
+            disabled={loadingDatabases || loadingSchemas || loadingTables}
             icon={
               <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
               </svg>
             }
           >
-            Refresh
+            {loadingDatabases || loadingSchemas || loadingTables ? "Refreshing…" : "Refresh"}
           </Button>
         </div>
       </Card>
