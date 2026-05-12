@@ -196,11 +196,7 @@ export const EnvironmentPanel: React.FC = () => {
   }, [selectedConnectionId, selectedDatabase, selectedSchema, setTables, setSelectedTableId, setTableDefinition, setColumns, setCurrentStep]);
 
   const selectedConn = connections.find((c) => c.id === selectedConnectionId);
-  const isReady =
-    !!selectedConnectionId &&
-    !!selectedDatabase &&
-    !!selectedSchema &&
-    !!selectedBusinessArea;
+  const isReady = !!selectedConnectionId && !!selectedDatabase && !!selectedSchema;
 
   const connectionOptions = connections.map((c) => ({
     value: c.id,
@@ -287,15 +283,16 @@ export const EnvironmentPanel: React.FC = () => {
 
           {/* Business Area lives at the environment level: it scopes the tables
               a developer is about to create or edit, so it belongs alongside
-              cluster/schema rather than in per-table metadata. */}
+              cluster/schema rather than in per-table metadata. Optional —
+              normal tables don't need to pick one; it's primarily for XBI
+              Tables / Database Source classification. */}
           {selectedSchema && (
             <Select
-              label="Business Area"
+              label="Business Area (optional)"
               options={BUSINESS_AREA_DROPDOWN_OPTIONS}
               value={selectedBusinessArea}
               onChange={(v) => setSelectedBusinessArea(v as BusinessArea)}
-              placeholder="Select Business Area"
-              required
+              placeholder="Select if applicable"
             />
           )}
 

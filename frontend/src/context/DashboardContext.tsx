@@ -422,14 +422,13 @@ export const DashboardProvider: React.FC<{ children: React.ReactNode }> = ({
 
   const submitForReview = useCallback(
     async (submittedById: string, assignedArchitectId: string, submittedByName?: string, tableIdOverride?: string): Promise<boolean> => {
-      if (!tableDefinition) {
-        addToast("error", "No table selected.");
-        return false;
-      }
-      // Prefer the override (e.g., the freshly-saved id returned by saveChanges)
-      // because tableDefinition.id from closure may still be the stale "tbl-new-..."
-      // placeholder — React state hasn't propagated within the same handler tick.
-      const effectiveTableId = tableIdOverride || tableDefinition.id;
+      // Prefer the override (e.g., the freshly-saved id returned by createTable
+      // or saveChanges) because tableDefinition from closure may still be null
+      // or stale — React state hasn't propagated within the same handler tick.
+      // We do NOT gate on `tableDefinition` being non-null: the create-then-
+      // submit flow legitimately calls this before the new tableDefinition has
+      // landed in this callback's closure.
+      const effectiveTableId = tableIdOverride || tableDefinition?.id;
       if (!effectiveTableId || effectiveTableId.startsWith('tbl-new')) {
         addToast("error", "Please save the table before submitting.");
         return false;
@@ -448,23 +447,31 @@ export const DashboardProvider: React.FC<{ children: React.ReactNode }> = ({
         setHasUnsavedChanges(false);
 
         const displayName = submittedByName || submittedById;
+        // Resolve a label for the developer-side toast/notification without
+        // depending on stale closure state. The architect-side picks up the
+        // submission via refreshPendingSubmissions polling and shows the real
+        // table name from the server payload regardless.
+        const displayTableName =
+          tableDefinition?.tableName ||
+          tables.find((t) => t.id === effectiveTableId)?.name ||
+          "Table";
 
         const notification: Notification = {
           id: `notif-${Date.now()}`,
           type: "submission",
           title: "Table Submitted for Review",
-          message: `${displayName} submitted "${tableDefinition.tableName}" for review.`,
-          tableName: tableDefinition.tableName,
+          message: `${displayName} submitted "${displayTableName}" for review.`,
+          tableName: displayTableName,
           submittedBy: displayName,
           timestamp: new Date().toISOString(),
           isRead: false,
           targetRole: "architect",
           submissionId: res.data.id,
-          tableDefinition: { ...tableDefinition },
+          tableDefinition: tableDefinition ? { ...tableDefinition } : undefined,
           columns: columns.map((c) => ({ ...c })),
         };
         addNotification(notification);
-        addToast("success", `"${tableDefinition.tableName}" submitted for Architect review.`);
+        addToast("success", `"${displayTableName}" submitted for Architect review.`);
         return true;
       } catch (err: any) {
         console.error(err);
@@ -479,7 +486,7 @@ export const DashboardProvider: React.FC<{ children: React.ReactNode }> = ({
         return false;
       }
     },
-    [tableDefinition, columns, addNotification, addToast]
+    [tableDefinition, columns, tables, addNotification, addToast]
   );
 
   // Architect review actions

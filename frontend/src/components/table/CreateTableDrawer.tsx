@@ -491,7 +491,6 @@ export const CreateTableDrawer: React.FC = () => {
     tableNameValidation.valid &&
     !!formData.entityLogicalName.trim() &&
     schemaValidation.valid &&
-    !!selectedBusinessArea &&
     !!selectedArchitect &&
     namedColumns.length > 0 &&
     duplicateColumnNames.size === 0;
@@ -510,12 +509,6 @@ export const CreateTableDrawer: React.FC = () => {
     }
     if (!schemaValidation.valid) {
       setSubmitError(schemaValidation.error || "Invalid schema name");
-      return;
-    }
-    if (!selectedBusinessArea) {
-      setSubmitError(
-        "Select a Business Area in the Environment panel before creating a table"
-      );
       return;
     }
     if (!selectedArchitect) {
@@ -689,18 +682,14 @@ export const CreateTableDrawer: React.FC = () => {
               placeholder="Select vertical"
             />
           </div>
-          <div className="mt-3 rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-xs">
-            <span className="text-slate-500">Business Area:&nbsp;</span>
-            {selectedBusinessArea ? (
+          {selectedBusinessArea && (
+            <div className="mt-3 rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-xs">
+              <span className="text-slate-500">Business Area:&nbsp;</span>
               <span className="font-medium text-slate-700">
                 {selectedBusinessArea}
               </span>
-            ) : (
-              <span className={showErrors ? "text-red-600" : "text-slate-500"}>
-                Not selected — pick one in the Environment panel.
-              </span>
-            )}
-          </div>
+            </div>
+          )}
         </div>
 
         <div>
