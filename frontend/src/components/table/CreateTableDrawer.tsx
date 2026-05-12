@@ -1,6 +1,9 @@
 import React, { useState, useCallback, useEffect, useMemo } from "react";
 import { useDashboard } from "../../context/DashboardContext";
-import { Drawer, Button, TextInput, Select } from "../common";
+import { useAuth } from "../../context/AuthContext";
+import { Drawer, Button, TextInput, Select, ArchitectSelector } from "../common";
+import type { Architect } from "../../api/architects";
+import { formatArchitectName } from "../../api/architects";
 import {
   generateEntityLogicalName,
   generateTableName,
@@ -320,8 +323,10 @@ export const CreateTableDrawer: React.FC = () => {
     isCreateTableDrawerOpen,
     setIsCreateTableDrawerOpen,
     createTable,
+    submitForReview,
     selectedSchemaId,
   } = useDashboard();
+  const { user } = useAuth();
 
   const [formData, setFormData] = useState<CreateTableFormState>(() =>
     buildInitialFormState(selectedSchemaId || "")
@@ -340,6 +345,12 @@ export const CreateTableDrawer: React.FC = () => {
   const [showErrors, setShowErrors] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+
+  // Reviewer assignment lives alongside the table metadata here because
+  // creating a table without picking a reviewer is no longer a valid flow:
+  // the table must enter the architect's queue immediately. The physical
+  // DDL only runs once the assigned architect approves the submission.
+  const [selectedArchitect, setSelectedArchitect] = useState<Architect | null>(null);
 
   // Sync schema field with the environment selection until the user types.
   useEffect(() => {
@@ -474,6 +485,7 @@ export const CreateTableDrawer: React.FC = () => {
     setShowErrors(false);
     setIsSaving(false);
     setSubmitError(null);
+    setSelectedArchitect(null);
   };
 
   const isValid =
@@ -481,6 +493,7 @@ export const CreateTableDrawer: React.FC = () => {
     !!formData.entityLogicalName.trim() &&
     schemaValidation.valid &&
     !!formData.businessArea &&
+    !!selectedArchitect &&
     namedColumns.length > 0 &&
     duplicateColumnNames.size === 0;
 
@@ -504,6 +517,14 @@ export const CreateTableDrawer: React.FC = () => {
       setSubmitError("Business Area is required");
       return;
     }
+    if (!selectedArchitect) {
+      setSubmitError("Select an architect to review this table");
+      return;
+    }
+    if (!user?.id) {
+      setSubmitError("Not authenticated — please sign in again");
+      return;
+    }
     if (namedColumns.length === 0) {
       setSubmitError("Add at least one column with a name");
       return;
@@ -517,17 +538,38 @@ export const CreateTableDrawer: React.FC = () => {
 
     setIsSaving(true);
     try {
-      const id = await createTable({
+      // Step 1: persist the table + columns as a draft. createTable returns
+      // the server-issued UUID we need to attach the submission to.
+      const tableId = await createTable({
         ...formData,
         tableName: tableNameValidation.sanitized,
         schemaName: schemaValidation.sanitized,
         columns: namedColumns,
       });
-      if (id) {
-        handleClose();
+      if (!tableId) {
+        // createTable already toasted the backend error. Leave the drawer
+        // open so the user can correct and retry without retyping anything.
+        return;
       }
-      // On `null` the context already toasted the backend error; leave the
-      // drawer open so the user can correct and resubmit without retyping.
+
+      // Step 2: hand it off to the architect's queue. Backend marks the
+      // table status as `submitted` and snapshots the current payload —
+      // the table is not yet present in the physical cluster. DDL runs
+      // only once the architect approves.
+      const ok = await submitForReview(
+        user.id,
+        selectedArchitect.id,
+        user.name,
+        tableId
+      );
+      if (!ok) {
+        // Submission failed but the draft was saved. The user can retry
+        // from inside the drawer (createTable is idempotent on the logical
+        // key — it'll UPDATE the existing row, not create a duplicate).
+        return;
+      }
+
+      handleClose();
     } finally {
       setIsSaving(false);
     }
@@ -538,7 +580,7 @@ export const CreateTableDrawer: React.FC = () => {
       isOpen={isCreateTableDrawerOpen}
       onClose={handleClose}
       title="Create New Table"
-      subtitle="Define table metadata and columns"
+      subtitle="Define table metadata and submit for architect review"
       width="xl"
       footer={
         <>
@@ -550,7 +592,7 @@ export const CreateTableDrawer: React.FC = () => {
             disabled={!isValid || isSaving}
             onClick={handleCreate}
           >
-            {isSaving ? "Creating…" : "Validate & Create"}
+            {isSaving ? "Submitting…" : "Submit for Review"}
           </Button>
         </>
       }
@@ -660,6 +702,35 @@ export const CreateTableDrawer: React.FC = () => {
               }
             />
           </div>
+        </div>
+
+        <div>
+          <h4 className="text-sm font-semibold text-slate-700 mb-1">
+            Architect Review
+          </h4>
+          <p className="text-xs text-slate-500 mb-3">
+            Submitting routes this table to the chosen architect. The table is
+            saved as a draft now; the physical schema is created in the target
+            cluster only after the architect approves.
+          </p>
+          <ArchitectSelector
+            label="Assign to Architect"
+            value={selectedArchitect}
+            onChange={(a) => setSelectedArchitect(a)}
+            required
+            placeholder="Search architects by name or email…"
+            error={
+              showErrors && !selectedArchitect
+                ? "Architect assignment is required"
+                : undefined
+            }
+          />
+          {selectedArchitect && (
+            <p className="mt-1 text-[11px] text-slate-500">
+              On submit, {formatArchitectName(selectedArchitect)} will see this
+              in their review queue.
+            </p>
+          )}
         </div>
 
         <div>
