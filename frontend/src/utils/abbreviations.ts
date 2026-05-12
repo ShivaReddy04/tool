@@ -62,10 +62,17 @@ export const setAbbreviationDictionary = (entries: AbbreviationEntry[]): void =>
   rebuildIndexes();
 };
 
+const firstThreeLettersAbbrev = (word: string): string => {
+  const letters = word.replace(/[^A-Za-z]/g, "");
+  if (!letters) return word.replace(/[^A-Za-z0-9]/g, "");
+  const head = letters.slice(0, 3);
+  return head.charAt(0).toUpperCase() + head.slice(1).toLowerCase();
+};
+
 /**
  * "Employee Sales Fact"            -> "Emp_Sls_Fct"
  * "Primary Key Identifier"         -> "PK_Id"
- * "Lookup Reference Table"         -> "Lookup_Reference_Table"   (unknown words pass through)
+ * "Lookup Reference Table"         -> "Loo_Ref_Tab"   (unknown words → first 3 letters)
  */
 export const generateTableName = (entityLogicalName: string): string => {
   if (!entityLogicalName) return "";
@@ -91,7 +98,7 @@ export const generateTableName = (entityLogicalName: string): string => {
     const word = spaceIdx === -1 ? remaining : remaining.slice(0, spaceIdx);
     remaining = spaceIdx === -1 ? "" : remaining.slice(spaceIdx + 1);
     const abbrev = fullToAbbrev.get(word.toLowerCase());
-    tokens.push(abbrev ?? word);
+    tokens.push(abbrev ?? firstThreeLettersAbbrev(word));
   }
 
   return tokens

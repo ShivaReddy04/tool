@@ -27,7 +27,8 @@
       "Bash(node scripts/cleanup-orphan-migration.js)",
       "Bash(npm run *)",
       "Bash(rm scripts/cleanup-orphan-migration.js)",
-      "Bash(rmdir scripts *)"
+      "Bash(rmdir scripts *)",
+      "Bash(node -e ' *)"
     ]
   }
 }

@@ -85,6 +85,18 @@ export const setAbbreviationDictionary = (entries: AbbreviationEntry[]): void =>
 /* ── generators ──────────────────────────────────────────────────────────── */
 
 /**
+ * Fallback abbreviation for words not in the dictionary: take the first
+ * three letters and title-case them ("Lookup" -> "Loo", "REFERENCE" -> "Ref").
+ * Words shorter than three letters are returned in title case as-is.
+ */
+const firstThreeLettersAbbrev = (word: string): string => {
+    const letters = word.replace(/[^A-Za-z]/g, '');
+    if (!letters) return word.replace(/[^A-Za-z0-9]/g, '');
+    const head = letters.slice(0, 3);
+    return head.charAt(0).toUpperCase() + head.slice(1).toLowerCase();
+};
+
+/**
  * Convert a human-readable entity logical name into a SQL-identifier-safe
  * table name using the abbreviation dictionary.
  *
@@ -92,7 +104,7 @@ export const setAbbreviationDictionary = (entries: AbbreviationEntry[]): void =>
  *   1. Normalize whitespace.
  *   2. Greedily consume the longest matching multi-word phrase ("Primary Key").
  *   3. Abbreviate any remaining single words via the dictionary; unknown words
- *      are passed through unchanged so the round-trip is non-destructive.
+ *      fall back to their first three letters, title-cased.
  *   4. Sanitize each emitted token to letters/digits only.
  *   5. Join with underscores.
  *
@@ -127,7 +139,7 @@ export const generateTableName = (entityLogicalName: string): string => {
         remaining = spaceIdx === -1 ? '' : remaining.slice(spaceIdx + 1);
         const lower = word.toLowerCase();
         const abbrev = fullToAbbrev.get(lower);
-        tokens.push(abbrev ?? word);
+        tokens.push(abbrev ?? firstThreeLettersAbbrev(word));
     }
 
     return tokens
