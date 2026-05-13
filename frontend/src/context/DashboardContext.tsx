@@ -932,8 +932,37 @@ export const DashboardProvider: React.FC<{ children: React.ReactNode }> = ({
 
   const updateColumn = useCallback(
     (id: string, updates: Partial<ColumnDefinition>) => {
+      // DDL-affecting fields: editing any of these on an already-applied column
+      // (action === 'No Change') must auto-promote the action to 'Modify' so the
+      // approval pipeline actually emits an ALTER. Without this, hasPendingChanges
+      // returns false for the snapshot and the architect's approve becomes a no-op
+      // on the target cluster.
+      const DDL_FIELDS: (keyof ColumnDefinition)[] = [
+        "columnName",
+        "dataType",
+        "isNullable",
+        "isPrimaryKey",
+        "defaultValue",
+      ];
+      const touchesDDL = DDL_FIELDS.some((k) => k in updates);
+      const callerSetAction = "action" in updates;
+
       setColumns((prev) =>
-        prev.map((col) => (col.id === id ? { ...col, ...updates } : col))
+        prev.map((col) => {
+          if (col.id !== id) return col;
+          const next = { ...col, ...updates };
+          if (
+            touchesDDL &&
+            !callerSetAction &&
+            col.action === "No Change" &&
+            // Add/Drop columns shouldn't be downgraded — only promote when the
+            // column was previously committed (No Change).
+            next.action === "No Change"
+          ) {
+            next.action = "Modify";
+          }
+          return next;
+        })
       );
       setHasUnsavedChanges(true);
     },
