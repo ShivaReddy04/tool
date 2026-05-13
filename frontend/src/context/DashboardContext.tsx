@@ -137,7 +137,13 @@ interface DashboardContextType {
 
 const DashboardContext = createContext<DashboardContextType | undefined>(undefined);
 
-const STORAGE_KEY = "dart_dashboard_state";
+const LEGACY_STORAGE_KEY = "dart_dashboard_state";
+// Each user gets their own localStorage blob — connections, table selections,
+// and notifications must not leak across accounts on a shared browser. Anonymous
+// state shouldn't exist in practice (DashboardProvider is mounted only behind
+// ProtectedRoute), but we namespace it just in case.
+const storageKeyFor = (userId: string | undefined) =>
+  userId ? `dart_dashboard_state_${userId}` : `${LEGACY_STORAGE_KEY}_anon`;
 
 /* ── shared column mappers ────────────────────────────────────────────────
  * Every code path that talks to the backend goes through these so all 24
@@ -202,17 +208,17 @@ function columnToServer(c: ColumnDefinition, fallbackSortOrder: number): Record<
   };
 }
 
-function loadPersistedState() {
+function loadPersistedState(userId: string | undefined) {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const raw = localStorage.getItem(storageKeyFor(userId));
     if (raw) return JSON.parse(raw);
   } catch { }
   return null;
 }
 
-function persistState(state: Record<string, unknown>) {
+function persistState(userId: string | undefined, state: Record<string, unknown>) {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    localStorage.setItem(storageKeyFor(userId), JSON.stringify(state));
   } catch { }
 }
 
@@ -257,8 +263,12 @@ function pendingSubmissionToNotification(s: any): Notification {
 export const DashboardProvider: React.FC<{ children: React.ReactNode }> = ({
   children,
 }) => {
-  const persisted = loadPersistedState();
   const { user } = useAuth();
+  // DashboardProvider only mounts behind ProtectedRoute, so user.id is set
+  // before any state initializer runs. Reading it here pins the persistence
+  // namespace to the signed-in user for the lifetime of this provider.
+  const userId = user?.id;
+  const persisted = loadPersistedState(userId);
 
   // Environment state — seeded with mock data
   const [clusters, setClusters] = useState<Cluster[]>([]);
@@ -309,9 +319,11 @@ export const DashboardProvider: React.FC<{ children: React.ReactNode }> = ({
     Array.isArray(persisted?.dismissedSubmissionIds) ? persisted.dismissedSubmissionIds : []
   );
 
-  // Persist state to localStorage whenever key data changes
+  // Persist state to localStorage whenever key data changes. Scoped by userId
+  // so each signed-in user has their own blob — connections, selections, and
+  // notifications never bleed across accounts on a shared browser.
   useEffect(() => {
-    persistState({
+    persistState(userId, {
       selectedClusterId,
       selectedDatabaseId,
       selectedSchemaId,
@@ -326,7 +338,15 @@ export const DashboardProvider: React.FC<{ children: React.ReactNode }> = ({
       notifications,
       dismissedSubmissionIds,
     });
-  }, [selectedClusterId, selectedDatabaseId, selectedSchemaId, selectedBusinessArea, tables, selectedTableId, tableDefinition, columns, currentStep, hasUnsavedChanges, submissionStatus, notifications, dismissedSubmissionIds]);
+  }, [userId, selectedClusterId, selectedDatabaseId, selectedSchemaId, selectedBusinessArea, tables, selectedTableId, tableDefinition, columns, currentStep, hasUnsavedChanges, submissionStatus, notifications, dismissedSubmissionIds]);
+
+  // One-time migration: drop the legacy un-namespaced blob if it's still
+  // around from before per-user scoping. Otherwise stale data from whoever
+  // first used the browser would sit there forever, wasting localStorage
+  // quota and confusing future debugging.
+  useEffect(() => {
+    localStorage.removeItem(LEGACY_STORAGE_KEY);
+  }, []);
 
   // Warn user before unloading page if there are unsaved changes
   useEffect(() => {

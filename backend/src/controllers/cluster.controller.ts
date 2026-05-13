@@ -41,9 +41,15 @@ export const create = async (req: Request, res: Response): Promise<void> => {
 };
 
 // GET /api/clusters
-export const list = async (_req: Request, res: Response): Promise<void> => {
+export const list = async (req: Request, res: Response): Promise<void> => {
   try {
-    const clusters = await getAllClusters();
+    // Connections carry encrypted credentials and target real production
+    // clusters — they must not leak across developer accounts. Each
+    // requester sees only the connections they registered themselves;
+    // admins get the global list for governance and unblocking.
+    const role = (req.user?.role || '').toLowerCase();
+    const scopedUserId = role === 'admin' ? undefined : req.user?.userId;
+    const clusters = await getAllClusters(scopedUserId);
     res.json(clusters);
   } catch (err) {
     console.error('List clusters error:', err);

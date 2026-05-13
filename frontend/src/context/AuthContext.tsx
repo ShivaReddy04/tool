@@ -118,6 +118,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
     setUser(null);
     setAccessToken(null);
+    // Drop the auth blob so the API client stops sending the previous user's
+    // bearer token, and the next signed-in user doesn't start with a stale
+    // session. Per-user dashboard state is namespaced by user.id in
+    // DashboardContext, so it's already isolated; we don't touch those.
+    localStorage.removeItem("accessToken");
+    localStorage.removeItem("user");
   }, []);
 
   return (

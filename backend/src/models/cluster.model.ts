@@ -64,7 +64,21 @@ export const createCluster = async (
   return toResponse(result.rows[0]);
 };
 
-export const getAllClusters = async (): Promise<ClusterResponse[]> => {
+/**
+ * @param userId optional. When provided, only connections registered by that
+ *   user are returned — cluster credentials are sensitive and shouldn't leak
+ *   across developer accounts on a shared deployment. Omit to fetch all
+ *   (admin/governance views).
+ */
+export const getAllClusters = async (userId?: string): Promise<ClusterResponse[]> => {
+  if (userId) {
+    const result = await query(
+      `SELECT id, name, db_type, host, port, database_name, username, status, created_by, created_at
+       FROM connections WHERE created_by = $1 ORDER BY created_at DESC`,
+      [userId]
+    );
+    return result.rows.map(toResponse);
+  }
   const result = await query(
     `SELECT id, name, db_type, host, port, database_name, username, status, created_by, created_at
      FROM connections ORDER BY created_at DESC`
