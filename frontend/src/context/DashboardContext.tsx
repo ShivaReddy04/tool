@@ -114,6 +114,16 @@ interface DashboardContextType {
    * to keep the drawer open on `null` so the user can correct and retry.
    */
   createTable: (def: TableDefinition) => Promise<string | null>;
+  /**
+   * Soft-delete a table from the application's metadata only. Never issues a
+   * DROP TABLE on the target cluster. On a 409 (related entities exist), the
+   * caller receives `warnings` and can re-invoke with `{ force: true }` to
+   * proceed. Returns `{ status: 'deleted' | 'warning' | 'error', warnings? }`.
+   */
+  deleteTable: (
+    id: string,
+    options?: { force?: boolean }
+  ) => Promise<{ status: "deleted" | "warning" | "error"; warnings?: string[]; message?: string }>;
   refreshTable: () => void;
   refreshMetadata: () => void;
 }
@@ -898,6 +908,49 @@ export const DashboardProvider: React.FC<{ children: React.ReactNode }> = ({
     setHasUnsavedChanges(true);
   }, []);
 
+  // Soft-delete a table from DART metadata only. Backend never issues DROP
+  // TABLE on the target cluster — verified in table_definition.controller.ts.
+  const deleteTable = useCallback(
+    async (
+      id: string,
+      options?: { force?: boolean }
+    ): Promise<{ status: "deleted" | "warning" | "error"; warnings?: string[]; message?: string }> => {
+      if (!id) {
+        addToast("error", "No table selected to delete.");
+        return { status: "error", message: "No table id" };
+      }
+      try {
+        const force = options?.force ? "?force=true" : "";
+        const res = await api.delete(`/table-definitions/${encodeURIComponent(id)}${force}`);
+
+        setTables((prev) => prev.filter((t) => t.id !== id));
+        if (selectedTableId === id) {
+          setSelectedTableId("");
+          setTableDefinition(null);
+          setColumns([]);
+          setSelectedColumnId("");
+          setRightPanelMode("properties");
+          setHasUnsavedChanges(false);
+          setSubmissionStatus("draft");
+        }
+
+        addToast("success", "Table removed successfully from application view.");
+        return { status: "deleted", message: res.data?.message };
+      } catch (err: any) {
+        const status = err?.response?.status;
+        const data = err?.response?.data;
+        if (status === 409 && Array.isArray(data?.warnings)) {
+          return { status: "warning", warnings: data.warnings, message: data.error };
+        }
+        const msg =
+          data?.error || data?.message || err?.message || "Failed to remove table from application.";
+        addToast("error", msg);
+        return { status: "error", message: msg };
+      }
+    },
+    [selectedTableId, addToast]
+  );
+
   // Refresh table — reload columns for the currently selected table
   const refreshTable = useCallback(async () => {
     if (!selectedTableId) return;
@@ -1013,6 +1066,7 @@ export const DashboardProvider: React.FC<{ children: React.ReactNode }> = ({
         resetEnvironment,
         resetTable,
         createTable,
+        deleteTable,
         refreshTable,
         refreshMetadata,
       }}

@@ -87,3 +87,26 @@ export const getTableDefinitionByKey = async (
 export const updateTableStatus = async (id: string, status: string): Promise<void> => {
     await query('UPDATE table_definitions SET status = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2', [status, id]);
 };
+
+/**
+ * Soft-delete from the application's perspective: removes the DART metadata
+ * row only. The physical table on the target cluster is never touched. FK
+ * cascades take care of column_definitions and submissions for this id.
+ */
+export const deleteTableDefinitionById = async (id: string): Promise<TableDefinition | null> => {
+    const result = await query('DELETE FROM table_definitions WHERE id = $1 RETURNING *', [id]);
+    return result.rows[0] || null;
+};
+
+/**
+ * Count related entities so the controller can warn the user before deletion.
+ * Today this is just pending submissions; extend here if more tables grow FKs
+ * to table_definitions.
+ */
+export const getTableReferences = async (id: string): Promise<{ pendingSubmissions: number }> => {
+    const result = await query(
+        `SELECT COUNT(*)::int AS pending FROM submissions WHERE table_id = $1 AND status = 'pending'`,
+        [id]
+    );
+    return { pendingSubmissions: result.rows[0]?.pending ?? 0 };
+};

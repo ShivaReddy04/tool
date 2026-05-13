@@ -1,5 +1,5 @@
 import { Request, Response } from 'express';
-import { createOrUpdateTableDefinition, getTableDefinitionDetails, getAllTableDefinitions } from '../models/table_definition.model';
+import { createOrUpdateTableDefinition, getTableDefinitionDetails, getAllTableDefinitions, deleteTableDefinitionById, getTableReferences } from '../models/table_definition.model';
 import { bulkUpsertColumnDefinitions, getColumnDefinitionsByTableId } from '../models/column_definition.model';
 import { getClusterConnectionConfig } from '../models/cluster.model';
 import { getConnector } from '../services/connector';
@@ -274,6 +274,94 @@ export const listTableDefinitions = async (req: Request, res: Response): Promise
     } catch (err) {
         console.error('List table definitions error:', err);
         res.status(500).json({ error: 'Internal server error' });
+    }
+};
+
+/**
+ * Soft-delete a DART table definition: removes the metadata row (and cascades
+ * column_definitions + submissions via FK) but never touches the physical
+ * table on the target cluster. No DROP TABLE is issued anywhere — by design.
+ *
+ * Flow:
+ *  - DELETE /:id            → if pending submissions exist, return 409 with
+ *                             a warnings payload so the UI can re-confirm.
+ *  - DELETE /:id?force=true → skip the safety check and delete anyway.
+ */
+export const removeTableDefinition = async (req: Request, res: Response): Promise<void> => {
+    try {
+        const id = req.params.id as string;
+        if (!UUID_RE.test(id)) {
+            res.status(400).json({ error: 'tableId must be a UUID' });
+            return;
+        }
+
+        const existing = await getTableDefinitionDetails(id);
+        if (!existing) {
+            res.status(404).json({ error: 'Table definition not found' });
+            return;
+        }
+
+        const force = String(req.query.force || 'false') === 'true';
+
+        if (!force) {
+            const refs = await getTableReferences(id);
+            const warnings: string[] = [];
+            if (refs.pendingSubmissions > 0) {
+                warnings.push(
+                    `This table has ${refs.pendingSubmissions} pending submission${refs.pendingSubmissions === 1 ? '' : 's'} awaiting architect review.`
+                );
+            }
+            if (warnings.length > 0) {
+                res.status(409).json({
+                    error: 'Table has related entities',
+                    warnings,
+                    references: refs,
+                });
+                return;
+            }
+        }
+
+        await deleteTableDefinitionById(id);
+
+        // Audit log is best-effort: the row is already gone, so a logging
+        // failure shouldn't surface as a delete failure.
+        try {
+            await createAuditLog({
+                action: 'DELETE_TABLE_METADATA',
+                entity_type: 'table_definition',
+                entity_id: id,
+                user_id: req.user?.userId,
+                user_name: req.user?.email || req.user?.userId || 'unknown',
+                metadata: {
+                    table_name: existing.table_name,
+                    schema_name: existing.schema_name,
+                    database_name: existing.database_name,
+                    connection_id: existing.connection_id,
+                    deleted_at: new Date().toISOString(),
+                    note: 'Application metadata only — physical table on target cluster is unchanged.',
+                },
+            });
+        } catch (auditErr) {
+            console.warn('[table-def] audit log for delete failed (non-fatal)', auditErr);
+        }
+
+        res.status(200).json({
+            success: true,
+            message: 'Table metadata removed from the application. The physical database table was not affected.',
+            id,
+            table_name: existing.table_name,
+        });
+    } catch (err: any) {
+        console.error('[table-def] removeTableDefinition failed', {
+            code: err?.code,
+            message: err?.message,
+            detail: err?.detail,
+        });
+        const isProd = process.env.NODE_ENV === 'production';
+        res.status(500).json({
+            error: 'Failed to remove table from application.',
+            ...(isProd ? {} : { message: err?.message, code: err?.code }),
+        });
     }
 };
 
