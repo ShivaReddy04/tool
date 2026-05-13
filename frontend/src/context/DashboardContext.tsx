@@ -103,6 +103,8 @@ interface DashboardContextType {
   addNotification: (n: Notification) => void;
   markNotificationRead: (id: string) => void;
   markAllNotificationsRead: () => void;
+  deleteNotification: (id: string) => void;
+  clearAllNotifications: () => void;
 
   // Toasts
   toasts: ToastData[];
@@ -299,6 +301,13 @@ export const DashboardProvider: React.FC<{ children: React.ReactNode }> = ({
 
   // Notification state
   const [notifications, setNotifications] = useState<Notification[]>(persisted?.notifications ?? []);
+  // Server-sourced submission notifications are regenerated on every poll, so
+  // "delete" needs persistence beyond the array — we track the submissionIds
+  // the user explicitly removed and filter them out of every subsequent
+  // refresh. The list survives reloads via the same localStorage blob.
+  const [dismissedSubmissionIds, setDismissedSubmissionIds] = useState<string[]>(
+    Array.isArray(persisted?.dismissedSubmissionIds) ? persisted.dismissedSubmissionIds : []
+  );
 
   // Persist state to localStorage whenever key data changes
   useEffect(() => {
@@ -315,8 +324,9 @@ export const DashboardProvider: React.FC<{ children: React.ReactNode }> = ({
       hasUnsavedChanges,
       submissionStatus,
       notifications,
+      dismissedSubmissionIds,
     });
-  }, [selectedClusterId, selectedDatabaseId, selectedSchemaId, selectedBusinessArea, tables, selectedTableId, tableDefinition, columns, currentStep, hasUnsavedChanges, submissionStatus, notifications]);
+  }, [selectedClusterId, selectedDatabaseId, selectedSchemaId, selectedBusinessArea, tables, selectedTableId, tableDefinition, columns, currentStep, hasUnsavedChanges, submissionStatus, notifications, dismissedSubmissionIds]);
 
   // Warn user before unloading page if there are unsaved changes
   useEffect(() => {
@@ -357,7 +367,10 @@ export const DashboardProvider: React.FC<{ children: React.ReactNode }> = ({
   const refreshPendingSubmissions = useCallback(async () => {
     try {
       const res = await api.get("/submissions/pending");
-      const serverNotifs: Notification[] = (res.data || []).map(pendingSubmissionToNotification);
+      const dismissed = new Set(dismissedSubmissionIds);
+      const serverNotifs: Notification[] = (res.data || [])
+        .map(pendingSubmissionToNotification)
+        .filter((n: Notification) => !n.submissionId || !dismissed.has(n.submissionId));
       setNotifications((prev) => {
         const localOnly = prev.filter(
           (n) => !n.id.startsWith("srv-submission-") && !(n.type === "submission" && n.submissionId)
@@ -367,7 +380,7 @@ export const DashboardProvider: React.FC<{ children: React.ReactNode }> = ({
     } catch (err) {
       console.error("Failed to load pending submissions:", err);
     }
-  }, []);
+  }, [dismissedSubmissionIds]);
 
   // Hydrate architect's bell from server on mount and on role change
   useEffect(() => {
@@ -384,6 +397,34 @@ export const DashboardProvider: React.FC<{ children: React.ReactNode }> = ({
 
   const markAllNotificationsRead = useCallback(() => {
     setNotifications((prev) => prev.map((n) => ({ ...n, isRead: true })));
+  }, []);
+
+  // Remove a notification from the bell. For server-sourced submission
+  // notifications (id prefix "srv-submission-…"), the polling endpoint will
+  // re-emit them on every refresh unless we remember they were dismissed —
+  // so we also record the submissionId in dismissedSubmissionIds.
+  const deleteNotification = useCallback((id: string) => {
+    setNotifications((prev) => {
+      const target = prev.find((n) => n.id === id);
+      if (target?.type === "submission" && target.submissionId) {
+        setDismissedSubmissionIds((ids) =>
+          ids.includes(target.submissionId!) ? ids : [...ids, target.submissionId!]
+        );
+      }
+      return prev.filter((n) => n.id !== id);
+    });
+  }, []);
+
+  const clearAllNotifications = useCallback(() => {
+    setNotifications((prev) => {
+      const submissionIds = prev
+        .filter((n) => n.type === "submission" && n.submissionId)
+        .map((n) => n.submissionId!) as string[];
+      if (submissionIds.length > 0) {
+        setDismissedSubmissionIds((ids) => Array.from(new Set([...ids, ...submissionIds])));
+      }
+      return [];
+    });
   }, []);
 
   // Save & Submit actions
@@ -1203,6 +1244,8 @@ export const DashboardProvider: React.FC<{ children: React.ReactNode }> = ({
         addNotification,
         markNotificationRead,
         markAllNotificationsRead,
+        deleteNotification,
+        clearAllNotifications,
         toasts,
         addToast,
         dismissToast,
