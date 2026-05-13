@@ -62,6 +62,12 @@ const TableMetadataSection: React.FC = () => {
           </div>
         ))}
       </div>
+      <div className="mt-4 pt-4 border-t border-slate-100">
+        <span className="text-xs text-slate-500">Table Definition</span>
+        <div className="text-sm font-medium text-slate-800 mt-1 whitespace-pre-wrap break-words">
+          {tableDefinition.definition || "—"}
+        </div>
+      </div>
     </Card>
   );
 };
