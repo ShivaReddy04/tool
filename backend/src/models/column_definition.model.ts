@@ -4,6 +4,10 @@ export interface ColumnDefinition {
     id: string;
     table_id: string;
     column_name: string;
+    /* Last-applied physical column name. NULL until the column has been
+       successfully pushed to the target cluster. Diffed against column_name
+       in the approval pipeline to detect renames and emit RENAME COLUMN. */
+    original_column_name?: string | null;
     data_type: string;
     is_nullable: boolean;
     is_primary_key: boolean;
@@ -167,8 +171,16 @@ export const getColumnDefinitionsByTableId = async (
  */
 export const commitColumnActions = async (tableId: string): Promise<void> => {
     await query(`DELETE FROM column_definitions WHERE table_id = $1 AND action = 'Drop'`, [tableId]);
+    // Sync original_column_name to current column_name so the next rename is
+    // measured from the just-applied physical state. Without this, a column
+    // that's been renamed and applied would still emit RENAME on the next
+    // approval against a name that no longer exists in the target.
     await query(
-        `UPDATE column_definitions SET action = 'No Change', updated_at = CURRENT_TIMESTAMP WHERE table_id = $1`,
+        `UPDATE column_definitions
+         SET action = 'No Change',
+             original_column_name = column_name,
+             updated_at = CURRENT_TIMESTAMP
+         WHERE table_id = $1`,
         [tableId]
     );
 };
