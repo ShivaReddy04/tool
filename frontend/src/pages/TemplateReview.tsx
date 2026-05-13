@@ -54,6 +54,12 @@ export const TemplateReview: React.FC = () => {
         <div>Schema: {data.table.schema_name}</div>
         <div>Database: {data.table.database_name}</div>
         <div>Status: {data.table.status}</div>
+        <div style={{ marginTop: 8 }}>
+          <div>Table Definition:</div>
+          <div style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+            {data.table.definition || '—'}
+          </div>
+        </div>
       </div>
 
       <div>
