@@ -20,6 +20,7 @@ import {
 } from "../components/common";
 import { useDashboard } from "../context/DashboardContext";
 import { useAuth } from "../context/AuthContext";
+import { validateColumnDefault } from "../utils/validation";
 import type { Architect } from "../api/architects";
 
 const statusVariant: Record<string, "neutral" | "info" | "success" | "danger"> = {
@@ -34,6 +35,7 @@ const SubmitForApprovalBar: React.FC = () => {
   const { user } = useAuth();
   const {
     tableDefinition,
+    columns,
     submissionStatus,
     hasUnsavedChanges,
     saveChanges,
@@ -43,9 +45,21 @@ const SubmitForApprovalBar: React.FC = () => {
   const [architect, setArchitect] = useState<Architect | null>(null);
   const [busy, setBusy] = useState(false);
 
+  // Block submission when any column's DEFAULT is malformed — the backend
+  // would reject anyway, but catching it here surfaces the actionable
+  // message right next to the button instead of as a toast after a round-trip.
+  const firstInvalidDefault = React.useMemo(() => {
+    for (const c of columns) {
+      const r = validateColumnDefault(c.defaultValue, c.dataType, `Column "${c.columnName || "?"}"`);
+      if (!r.valid && r.error) return r.error;
+    }
+    return null;
+  }, [columns]);
+
   if (!tableDefinition) return null;
 
   const isLocked = submissionStatus === "submitted";
+  const submitDisabled = isLocked || firstInvalidDefault !== null;
 
   const handleConfirm = async () => {
     if (!architect || !user) return;
@@ -94,16 +108,21 @@ const SubmitForApprovalBar: React.FC = () => {
           <Button
             variant="primary"
             onClick={() => setOpen(true)}
-            disabled={isLocked}
+            disabled={submitDisabled}
             title={
               isLocked
                 ? "This table is already pending review."
+                : firstInvalidDefault
+                ? firstInvalidDefault
                 : "Save and submit changes for architect approval."
             }
           >
             Submit for Approval
           </Button>
         </div>
+        {firstInvalidDefault && (
+          <p className="mt-3 text-xs text-red-600">{firstInvalidDefault}</p>
+        )}
       </Card>
 
       <Modal

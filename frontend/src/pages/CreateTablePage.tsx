@@ -12,7 +12,7 @@ import {
   setAbbreviationDictionary,
 } from "../utils/abbreviations";
 import api from "../api/client";
-import { sanitizeSchemaInput, validateIdentifier, validateSchemaName } from "../utils/validation";
+import { sanitizeSchemaInput, validateColumnDefault, validateIdentifier, validateSchemaName } from "../utils/validation";
 import {
   VERTICAL_NAME_OPTIONS,
   type TableDefinition,
@@ -128,6 +128,21 @@ export const CreateTablePage: React.FC = () => {
     [newColumns]
   );
 
+  // Same per-column default validation the backend runs. Computed up-front so
+  // we can both highlight individual cells and block the page-level submit
+  // until every default is valid.
+  const defaultErrors = useMemo(() => {
+    const map = new Map<string, string>();
+    newColumns.forEach((c) => {
+      if (!c.columnName.trim()) return;
+      const r = validateColumnDefault(c.defaultValue, c.dataType, `Column "${c.columnName}"`);
+      if (!r.valid && r.error) map.set(c.id, r.error);
+    });
+    return map;
+  }, [newColumns]);
+
+  const firstDefaultError = defaultErrors.size > 0 ? Array.from(defaultErrors.values())[0] : null;
+
   const updateFormField = (field: keyof CreateTableFormState, value: string) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
   };
@@ -193,7 +208,8 @@ export const CreateTablePage: React.FC = () => {
     schemaValidation.valid &&
     !!selectedArchitect &&
     namedColumns.length > 0 &&
-    duplicateColumnNames.size === 0;
+    duplicateColumnNames.size === 0 &&
+    defaultErrors.size === 0;
 
   const handleCancel = () => {
     navigate("/dashboard");
@@ -231,6 +247,10 @@ export const CreateTablePage: React.FC = () => {
       setSubmitError(
         `Duplicate column names: ${Array.from(duplicateColumnNames).join(", ")}`
       );
+      return;
+    }
+    if (firstDefaultError) {
+      setSubmitError(firstDefaultError);
       return;
     }
 
@@ -462,6 +482,7 @@ export const CreateTablePage: React.FC = () => {
                       const isDup =
                         !!col.columnName.trim() &&
                         duplicateColumnNames.has(col.columnName.trim().toLowerCase());
+                      const defaultErr = defaultErrors.get(col.id);
                       return (
                         <tr
                           key={col.id}
@@ -474,10 +495,12 @@ export const CreateTablePage: React.FC = () => {
                             const value = f.get(col);
                             const cellClass =
                               "w-full bg-transparent px-2 py-1 text-xs text-slate-800 border border-transparent rounded focus:bg-white focus:border-indigo-300 focus:ring-1 focus:ring-indigo-200 focus:outline-none";
+                            const defaultErrorOnCell = f.key === "defaultValue" && !!defaultErr;
                             const errorRing =
-                              showErrors &&
-                              f.key === "columnName" &&
-                              (isDup || !col.columnName.trim())
+                              (showErrors &&
+                                f.key === "columnName" &&
+                                (isDup || !col.columnName.trim())) ||
+                              defaultErrorOnCell
                                 ? "border-red-300 bg-red-50"
                                 : "";
                             if (f.kind === "checkbox") {
@@ -544,6 +567,8 @@ export const CreateTablePage: React.FC = () => {
                                   title={
                                     showErrors && f.key === "columnName" && isDup
                                       ? "Duplicate column name"
+                                      : defaultErrorOnCell
+                                      ? defaultErr
                                       : undefined
                                   }
                                 />

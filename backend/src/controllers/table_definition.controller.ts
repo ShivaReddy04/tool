@@ -4,7 +4,7 @@ import { bulkUpsertColumnDefinitions, getColumnDefinitionsByTableId } from '../m
 import { getClusterConnectionConfig } from '../models/cluster.model';
 import { getConnector } from '../services/connector';
 import { createAuditLog } from '../models/audit_log.model';
-import { validateSchemaName, validateIdentifier } from '../utils/validation';
+import { validateSchemaName, validateIdentifier, validateColumnDefault } from '../utils/validation';
 import { withTransaction } from '../config/db';
 
 const VALID_DISTRIBUTION_STYLES = new Set(['KEY', 'EVEN', 'ALL', 'AUTO']);
@@ -111,6 +111,21 @@ export const saveTableDefinition = async (req: Request, res: Response): Promise<
                 return;
             }
             seenNames.add(lower);
+
+            // Reject obviously-wrong DEFAULT values before they reach DDL.
+            // The generator inlines col.default_value verbatim, so `DEFAULT AI`
+            // on a DATE column would otherwise blow up at architect-approve
+            // time with an opaque "invalid input syntax for type date" error.
+            const defaultCheck = validateColumnDefault(
+                col.default_value,
+                col.data_type,
+                `Column "${nameCheck.sanitized}"`,
+            );
+            if (!defaultCheck.valid) {
+                res.status(400).json({ error: defaultCheck.error, field: 'default_value', rowIndex: i });
+                return;
+            }
+            col.default_value = defaultCheck.sanitized || null;
         }
 
         // Identity comes from the JWT — never from the body. Audit logging

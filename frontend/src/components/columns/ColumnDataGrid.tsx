@@ -2,6 +2,7 @@ import React, { useMemo, useState } from "react";
 import { useDashboard } from "../../context/DashboardContext";
 import { Card, Button } from "../common";
 import type { ColumnAction, ColumnDefinition } from "../../types";
+import { validateColumnDefault } from "../../utils/validation";
 import { COLUMN_FIELDS, type ColumnFieldSpec } from "./columnFields";
 
 const actionRowStyles: Record<ColumnAction, string> = {
@@ -18,10 +19,11 @@ interface EditableCellProps {
   field: ColumnFieldSpec;
   col: ColumnDefinition;
   isDuplicate: boolean;
+  defaultError?: string;
   onUpdate: (id: string, patch: Partial<ColumnDefinition>) => void;
 }
 
-const EditableCell: React.FC<EditableCellProps> = ({ field, col, isDuplicate, onUpdate }) => {
+const EditableCell: React.FC<EditableCellProps> = ({ field, col, isDuplicate, defaultError, onUpdate }) => {
   const value = field.get(col);
   const commit = (v: string | number | boolean) => {
     const next = field.set(col, v);
@@ -36,8 +38,9 @@ const EditableCell: React.FC<EditableCellProps> = ({ field, col, isDuplicate, on
     if (Object.keys(patch).length > 0) onUpdate(col.id, patch);
   };
 
+  const hasDefaultError = field.key === "defaultValue" && !!defaultError;
   const errorClass =
-    field.key === "columnName" && (isDuplicate || !col.columnName.trim())
+    (field.key === "columnName" && (isDuplicate || !col.columnName.trim())) || hasDefaultError
       ? "border-red-300 bg-red-50"
       : "";
 
@@ -87,7 +90,13 @@ const EditableCell: React.FC<EditableCellProps> = ({ field, col, isDuplicate, on
       className={`${baseCellClass} ${errorClass}`}
       aria-label={field.label}
       placeholder={field.required ? "required" : ""}
-      title={field.key === "columnName" && isDuplicate ? "Duplicate column name" : undefined}
+      title={
+        field.key === "columnName" && isDuplicate
+          ? "Duplicate column name"
+          : hasDefaultError
+          ? defaultError
+          : undefined
+      }
     />
   );
 };
@@ -107,6 +116,19 @@ export const ColumnDataGrid: React.FC = () => {
       if (count > 1) dups.add(name);
     });
     return dups;
+  }, [columns]);
+
+  // Per-column default-value validation — mirrors the backend check in
+  // saveTableDefinition. We catch bad defaults here so the developer sees a
+  // red ring on the cell immediately instead of discovering it when the
+  // architect's approve fails apply on the target cluster.
+  const defaultErrors = useMemo(() => {
+    const map = new Map<string, string>();
+    columns.forEach((c) => {
+      const r = validateColumnDefault(c.defaultValue, c.dataType, `Column "${c.columnName || "?"}"`);
+      if (!r.valid && r.error) map.set(c.id, r.error);
+    });
+    return map;
   }, [columns]);
 
   const filteredColumns = columns.filter((col) =>
@@ -194,6 +216,7 @@ export const ColumnDataGrid: React.FC = () => {
                           field={f}
                           col={col}
                           isDuplicate={isDup}
+                          defaultError={defaultErrors.get(col.id)}
                           onUpdate={updateColumn}
                         />
                       </td>

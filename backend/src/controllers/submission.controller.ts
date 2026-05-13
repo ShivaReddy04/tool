@@ -299,9 +299,41 @@ export const handleReviewAndSync = async (req: Request, res: Response): Promise<
                 });
             } catch (syncErr: any) {
                 console.error('Database Sync Hook Error:', syncErr);
+
+                // Pull out as much actionable context as possible. runDDLBatch
+                // attaches the exact statement that failed (see connector.ts);
+                // from that we can usually identify the column the architect
+                // needs to look at, which is a much better message than the
+                // raw PG/MySQL error text alone.
+                const failedStatement: string | undefined = syncErr?.failedStatement;
+                const baseMessage = syncErr?.message || String(syncErr);
+
+                let column: string | undefined;
+                if (failedStatement) {
+                    // ADD/ALTER/MODIFY COLUMN "x" …  → x
+                    const altered = failedStatement.match(
+                        /(?:ADD|ALTER|MODIFY|DROP)\s+COLUMN\s+["`[]?([A-Za-z_][A-Za-z0-9_]*)/i,
+                    );
+                    if (altered) column = altered[1];
+                    if (!column) {
+                        // CREATE TABLE: pick the first column identifier inside the parens.
+                        const created = failedStatement.match(
+                            /CREATE\s+TABLE\s+[^(]*\(\s*["`[]?([A-Za-z_][A-Za-z0-9_]*)/i,
+                        );
+                        if (created) column = created[1];
+                    }
+                }
+
+                const detail = column
+                    ? `Column "${column}": ${baseMessage}`
+                    : baseMessage;
+
                 res.status(500).json({
                     error: 'Review recorded, but database schema push failed.',
-                    details: syncErr?.message || String(syncErr),
+                    details: detail,
+                    column,
+                    statement: failedStatement,
+                    pgCode: syncErr?.code,
                 });
                 return;
             }

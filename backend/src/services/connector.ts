@@ -150,8 +150,17 @@ async function pgRunDDLBatch(config: ConnectionConfig, statements: string[]) {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
-    for (const stmt of statements) {
-      await client.query(stmt);
+    for (let i = 0; i < statements.length; i++) {
+      try {
+        await client.query(statements[i]);
+      } catch (e: any) {
+        // Attach the exact statement that blew up so the controller can
+        // surface a useful message ("Column X DEFAULT 'AI' rejected on
+        // DATE type") instead of the raw "invalid input syntax" text.
+        e.failedStatement = statements[i];
+        e.failedStatementIndex = i;
+        throw e;
+      }
     }
     await client.query('COMMIT');
   } catch (e) {
@@ -248,8 +257,14 @@ async function mysqlRunDDLBatch(config: ConnectionConfig, statements: string[]) 
   // ALTER/CREATE anyway. Run sequentially and surface the first failure.
   const conn = await mysqlConnect(config);
   try {
-    for (const stmt of statements) {
-      await conn.query(stmt);
+    for (let i = 0; i < statements.length; i++) {
+      try {
+        await conn.query(statements[i]);
+      } catch (e: any) {
+        e.failedStatement = statements[i];
+        e.failedStatementIndex = i;
+        throw e;
+      }
     }
   } finally {
     await conn.end();
@@ -378,15 +393,27 @@ async function mssqlRunDDLBatch(config: ConnectionConfig, statements: string[]) 
   if (statements.length === 0) return;
   const pool = await mssqlConnect(config);
   const transaction = new sql.Transaction(pool);
+  let failedIndex = -1;
   try {
     await transaction.begin();
-    for (const stmt of statements) {
-      const req = new sql.Request(transaction);
-      await req.query(stmt);
+    for (let i = 0; i < statements.length; i++) {
+      try {
+        const req = new sql.Request(transaction);
+        await req.query(statements[i]);
+      } catch (inner: any) {
+        failedIndex = i;
+        inner.failedStatement = statements[i];
+        inner.failedStatementIndex = i;
+        throw inner;
+      }
     }
     await transaction.commit();
-  } catch (e) {
+  } catch (e: any) {
     try { await transaction.rollback(); } catch { /* ignore */ }
+    if (failedIndex >= 0 && !e.failedStatement) {
+      e.failedStatement = statements[failedIndex];
+      e.failedStatementIndex = failedIndex;
+    }
     throw e;
   } finally {
     await pool.close();
