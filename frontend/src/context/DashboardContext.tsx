@@ -14,6 +14,17 @@ import type {
 } from "../types";
 import type { ToastData } from "../components/common/Toast";
 
+// Backend status values include 'applied' (DDL applied to target cluster) and
+// 'processed' that the frontend SubmissionStatus type does not enumerate. Both
+// represent a successfully approved table from the user's perspective, so
+// collapse them to 'approved' for display.
+const normalizeStatus = (s: string | undefined | null): SubmissionStatus => {
+  if (s === "approved" || s === "applied" || s === "processed") return "approved";
+  if (s === "submitted") return "submitted";
+  if (s === "rejected") return "rejected";
+  return "draft";
+};
+
 interface DashboardContextType {
   // Environment
   clusters: Cluster[];
@@ -809,7 +820,7 @@ export const DashboardProvider: React.FC<{ children: React.ReactNode }> = ({
             });
             setColumns(res.data.columns.map(columnFromServer));
             setCurrentStep(3);
-            setSubmissionStatus(res.data.table.status);
+            setSubmissionStatus(normalizeStatus(res.data.table.status));
             setHasUnsavedChanges(false);
           })
           .catch(err => {
@@ -906,6 +917,7 @@ export const DashboardProvider: React.FC<{ children: React.ReactNode }> = ({
       setColumns(res.data.columns.map(columnFromServer));
       setSelectedColumnId("");
       setRightPanelMode("properties");
+      setSubmissionStatus(normalizeStatus(res.data.table.status));
       setHasUnsavedChanges(false);
       addToast("success", "Table data refreshed.");
     } catch (err) {
