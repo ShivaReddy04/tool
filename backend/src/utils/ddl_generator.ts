@@ -85,7 +85,14 @@ export function buildAlterDDL(
         const colName = quoteIdent(dbType, c.column_name);
 
         if (dbType === 'postgresql' || dbType === 'redshift') {
-            stmts.push(`ALTER TABLE ${target} ALTER COLUMN ${colName} TYPE ${c.data_type}`);
+            // USING is required when the cast isn't implicit (e.g. text→integer).
+            // Without it, PG returns "column ... cannot be cast automatically".
+            // Always emitting it is safe — implicit casts work the same way, and
+            // genuinely incompatible data surfaces as a more specific error like
+            // "invalid input syntax for type integer".
+            stmts.push(
+                `ALTER TABLE ${target} ALTER COLUMN ${colName} TYPE ${c.data_type} USING ${colName}::${c.data_type}`
+            );
             if (c.is_nullable === false) {
                 stmts.push(`ALTER TABLE ${target} ALTER COLUMN ${colName} SET NOT NULL`);
             } else if (c.is_nullable === true) {
