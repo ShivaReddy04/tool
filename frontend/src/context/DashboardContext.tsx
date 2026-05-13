@@ -546,9 +546,18 @@ export const DashboardProvider: React.FC<{ children: React.ReactNode }> = ({
         setReviewingNotification(null);
         addToast("success", `"${reviewingNotification.tableName}" approved — data model updated.`);
         refreshPendingSubmissions();
-      } catch (err) {
+      } catch (err: any) {
         console.error(err);
-        addToast("error", "Failed to push approval database changes.");
+        // Surface what the server actually said. The backend returns
+        // {error, details} on sync failures (DDL errors include the column
+        // name and PG code), so showing that gives the architect something
+        // actionable instead of the generic "Failed to push..." message.
+        const data = err?.response?.data;
+        const msg =
+          data?.error ||
+          data?.message ||
+          "Failed to push approval database changes.";
+        addToast("error", data?.details ? `${msg} (${data.details})` : msg);
       }
     },
     [reviewingNotification, markNotificationRead, addNotification, addToast, refreshPendingSubmissions]
@@ -579,9 +588,11 @@ export const DashboardProvider: React.FC<{ children: React.ReactNode }> = ({
         setReviewingNotification(null);
         addToast("info", `"${reviewingNotification.tableName}" has been rejected.`);
         refreshPendingSubmissions();
-      } catch (err) {
+      } catch (err: any) {
         console.error(err);
-        addToast("error", "Failed to record rejection.");
+        const data = err?.response?.data;
+        const msg = data?.error || data?.message || "Failed to record rejection.";
+        addToast("error", data?.details ? `${msg} (${data.details})` : msg);
       }
     },
     [reviewingNotification, markNotificationRead, addNotification, addToast, refreshPendingSubmissions]
