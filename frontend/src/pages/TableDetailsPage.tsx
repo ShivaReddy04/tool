@@ -1,9 +1,9 @@
-import React, { useEffect } from "react";
+import React, { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { useDashboard } from "../context/DashboardContext";
 import { TopBar, FooterStatusBar } from "../components/layout";
-import { Card, Button, Badge, EmptyState, ToastContainer } from "../components/common";
+import { Card, Button, Badge, EmptyState, ToastContainer, TextInput } from "../components/common";
 import { ColumnDataGrid, ColumnDetailPanel, RowDetailPanel } from "../components/columns";
 import { ReviewDrawer } from "../components/review";
 import { CreateTableDrawer, DeleteTableModal } from "../components/table";
@@ -66,6 +66,84 @@ const TableMetadataSection: React.FC = () => {
         <span className="text-xs text-slate-500">Table Definition</span>
         <div className="text-sm font-medium text-slate-800 mt-1 whitespace-pre-wrap break-words">
           {tableDefinition.definition || "—"}
+        </div>
+      </div>
+    </Card>
+  );
+};
+
+// Renders Approve / Reject actions inline at the bottom of the table view so
+// architects can review without bouncing through the bell or template list.
+// Only shown when the table is actually pending review (status === 'submitted').
+const ArchitectActionsSection: React.FC = () => {
+  const { hasRole, user } = useAuth();
+  const { submissionStatus, reviewCurrentTable } = useDashboard();
+  const [showRejectInput, setShowRejectInput] = useState(false);
+  const [rejectReason, setRejectReason] = useState("");
+  const [busy, setBusy] = useState<"approve" | "reject" | null>(null);
+
+  if (!hasRole("architect") || submissionStatus !== "submitted") return null;
+
+  const architectName = user?.name || "Architect";
+
+  const handleApprove = async () => {
+    setBusy("approve");
+    await reviewCurrentTable("approved", architectName);
+    setBusy(null);
+  };
+
+  const handleReject = async () => {
+    if (!showRejectInput) {
+      setShowRejectInput(true);
+      return;
+    }
+    setBusy("reject");
+    const ok = await reviewCurrentTable("rejected", architectName, rejectReason || undefined);
+    setBusy(null);
+    if (ok) {
+      setRejectReason("");
+      setShowRejectInput(false);
+    }
+  };
+
+  return (
+    <Card
+      title="Architect Actions"
+      subtitle="Approve to apply the data model; reject to send it back to the developer."
+      icon={
+        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+        </svg>
+      }
+    >
+      <div className="space-y-3">
+        {showRejectInput && (
+          <TextInput
+            label="Reason for rejection (optional)"
+            value={rejectReason}
+            onChange={(e) => setRejectReason(e.target.value)}
+            placeholder="e.g. column types need refinement"
+          />
+        )}
+        <div className="flex justify-end gap-3">
+          {showRejectInput && (
+            <Button
+              variant="ghost"
+              onClick={() => {
+                setShowRejectInput(false);
+                setRejectReason("");
+              }}
+              disabled={busy !== null}
+            >
+              Cancel
+            </Button>
+          )}
+          <Button variant="danger" onClick={handleReject} disabled={busy !== null}>
+            {busy === "reject" ? "Rejecting..." : showRejectInput ? "Confirm Reject" : "Reject"}
+          </Button>
+          <Button variant="primary" onClick={handleApprove} disabled={busy !== null || showRejectInput}>
+            {busy === "approve" ? "Approving..." : "Approve & Update Data Model"}
+          </Button>
         </div>
       </div>
     </Card>
@@ -159,6 +237,7 @@ export const TableDetailsPage: React.FC = () => {
                 <>
                   <TableMetadataSection />
                   <ColumnDataGrid />
+                  <ArchitectActionsSection />
                 </>
               ) : (
                 <Card>

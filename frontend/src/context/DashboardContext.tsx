@@ -92,6 +92,11 @@ interface DashboardContextType {
   setIsReviewDrawerOpen: (open: boolean) => void;
   approveSubmission: (architectName: string) => void;
   rejectSubmission: (architectName: string, reason?: string) => void;
+  reviewCurrentTable: (
+    status: "approved" | "rejected",
+    architectName: string,
+    reason?: string
+  ) => Promise<boolean>;
 
   // Notifications
   notifications: Notification[];
@@ -582,6 +587,67 @@ export const DashboardProvider: React.FC<{ children: React.ReactNode }> = ({
     [reviewingNotification, markNotificationRead, addNotification, addToast, refreshPendingSubmissions]
   );
 
+  // Review the currently-loaded table directly from the Table Details page
+  // without needing a notification in the bell. Looks up the pending submission
+  // for this table_id, posts the review, then re-syncs status from the server
+  // (so 'applied' after a successful DDL run normalizes to 'approved').
+  const reviewCurrentTable = useCallback(
+    async (
+      status: "approved" | "rejected",
+      architectName: string,
+      reason?: string
+    ): Promise<boolean> => {
+      const tableId = tableDefinition?.id;
+      if (!tableId) {
+        addToast("error", "No table loaded to review.");
+        return false;
+      }
+      try {
+        const pendingRes = await api.get("/submissions/pending");
+        const submission = (pendingRes.data || []).find((s: any) => s.table_id === tableId);
+        if (!submission) {
+          addToast("error", "No pending submission found for this table.");
+          return false;
+        }
+        await api.post(`/submissions/${submission.id}/review`, {
+          reviewedBy: architectName,
+          status,
+          rejectionReason: reason,
+        });
+
+        // Re-fetch the table to pick up the backend's authoritative status
+        // (which becomes 'applied' after DDL succeeds on the target cluster).
+        try {
+          const tableRes = await api.get(`/table-definitions/${tableId}`);
+          setSubmissionStatus(normalizeStatus(tableRes.data.table.status));
+        } catch {
+          setSubmissionStatus(status);
+        }
+
+        refreshPendingSubmissions();
+
+        const name = tableDefinition?.tableName || "Table";
+        if (status === "approved") {
+          addToast("success", `"${name}" approved — data model updated.`);
+        } else {
+          addToast("info", `"${name}" has been rejected.${reason ? ` Reason: ${reason}` : ""}`);
+        }
+        return true;
+      } catch (err: any) {
+        console.error(err);
+        const msg =
+          err?.response?.data?.error ||
+          err?.response?.data?.message ||
+          (status === "approved"
+            ? "Failed to push approval database changes."
+            : "Failed to record rejection.");
+        addToast("error", msg);
+        return false;
+      }
+    },
+    [tableDefinition, addToast, refreshPendingSubmissions]
+  );
+
   // Create table action — persists immediately to the backend in a single
   // transactional save. Earlier versions only stashed a `tbl-new-*` placeholder
   // in local state and deferred the actual POST to a later Save click, which
@@ -1056,6 +1122,7 @@ export const DashboardProvider: React.FC<{ children: React.ReactNode }> = ({
         setIsReviewDrawerOpen,
         approveSubmission,
         rejectSubmission,
+        reviewCurrentTable,
         notifications,
         addNotification,
         markNotificationRead,
