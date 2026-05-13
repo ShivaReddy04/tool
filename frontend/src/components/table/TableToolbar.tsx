@@ -68,7 +68,7 @@ export const TableToolbar: React.FC = () => {
           New Table
         </Button>
 
-        {hasRole("architect") && (
+        {(hasRole("developer") || hasRole("architect") || hasRole("admin")) && (
           <Button
             variant="danger"
             size="sm"

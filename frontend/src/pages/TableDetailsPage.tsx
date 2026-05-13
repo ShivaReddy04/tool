@@ -135,7 +135,7 @@ export const TableDetailsPage: React.FC = () => {
                 {tableDefinition?.tableName ?? "Table"}
               </div>
             </div>
-            {tableDefinition && hasRole("architect") && (
+            {tableDefinition && (hasRole("developer") || hasRole("architect") || hasRole("admin")) && (
               <Button
                 variant="danger"
                 size="sm"
