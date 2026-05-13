@@ -348,21 +348,21 @@ export const DashboardProvider: React.FC<{ children: React.ReactNode }> = ({
   }, []);
 
   // Pull pending submissions from the server and merge as architect-targeted notifications.
-  // Replaces existing server-sourced submission notifications (id starts with "srv-submission-")
-  // so reviewed/removed items disappear, but preserves locally-created approval/rejection notifications.
+  // The server is the sole source of truth for submission notifications: any
+  // local notif with a submissionId (e.g. a legacy entry persisted from a
+  // previous developer session on this browser) is dropped so the bell can't
+  // show both a local mirror and the server-side "srv-submission-…" for the
+  // same submission. Local approval/rejection notifications have no
+  // submissionId and are preserved.
   const refreshPendingSubmissions = useCallback(async () => {
     try {
       const res = await api.get("/submissions/pending");
       const serverNotifs: Notification[] = (res.data || []).map(pendingSubmissionToNotification);
       setNotifications((prev) => {
-        const localOnly = prev.filter((n) => !n.id.startsWith("srv-submission-"));
-        const seenSubmissionIds = new Set(serverNotifs.map((n) => n.submissionId));
-        // Drop any local "submission" notifications whose submission was reviewed (no longer pending)
-        const localFiltered = localOnly.filter((n) => {
-          if (n.type !== "submission" || !n.submissionId) return true;
-          return seenSubmissionIds.has(n.submissionId);
-        });
-        return [...serverNotifs, ...localFiltered];
+        const localOnly = prev.filter(
+          (n) => !n.id.startsWith("srv-submission-") && !(n.type === "submission" && n.submissionId)
+        );
+        return [...serverNotifs, ...localOnly];
       });
     } catch (err) {
       console.error("Failed to load pending submissions:", err);
@@ -474,31 +474,17 @@ export const DashboardProvider: React.FC<{ children: React.ReactNode }> = ({
         setSubmissionStatus("submitted");
         setHasUnsavedChanges(false);
 
-        const displayName = submittedByName || submittedById;
-        // Resolve a label for the developer-side toast/notification without
-        // depending on stale closure state. The architect-side picks up the
-        // submission via refreshPendingSubmissions polling and shows the real
-        // table name from the server payload regardless.
+        // Resolve a friendly table label for the developer-side toast.
+        // The architect-side notification is created exclusively from the
+        // server's pending list (refreshPendingSubmissions → pendingSubmissionToNotification);
+        // creating a second local copy here caused the bell to show two
+        // entries for one submission whenever the architect loaded on a
+        // browser that had previously persisted the developer's state.
         const displayTableName =
           tableDefinition?.tableName ||
           tables.find((t) => t.id === effectiveTableId)?.name ||
           "Table";
 
-        const notification: Notification = {
-          id: `notif-${Date.now()}`,
-          type: "submission",
-          title: "Table Submitted for Review",
-          message: `${displayName} submitted "${displayTableName}" for review.`,
-          tableName: displayTableName,
-          submittedBy: displayName,
-          timestamp: new Date().toISOString(),
-          isRead: false,
-          targetRole: "architect",
-          submissionId: res.data.id,
-          tableDefinition: tableDefinition ? { ...tableDefinition } : undefined,
-          columns: columns.map((c) => ({ ...c })),
-        };
-        addNotification(notification);
         addToast("success", `"${displayTableName}" submitted for Architect review.`);
         return true;
       } catch (err: any) {
@@ -514,7 +500,7 @@ export const DashboardProvider: React.FC<{ children: React.ReactNode }> = ({
         return false;
       }
     },
-    [tableDefinition, columns, tables, addNotification, addToast]
+    [tableDefinition, tables, addToast]
   );
 
   // Architect review actions
@@ -854,41 +840,70 @@ export const DashboardProvider: React.FC<{ children: React.ReactNode }> = ({
       if (selectedTableId.startsWith('tbl-new-')) {
         // no-op: keep whatever createTable() already put in state
       } else if (selectedTableId.includes('::')) {
-        // This is a physical table from the database
+        // Physical table from the database. Prefer DART's saved metadata
+        // (definition, entity_logical_name, business_area, full column
+        // attribute set) when a table_definitions row exists — after an
+        // approved submission the developer expects to see what they
+        // entered, not blank defaults derived from the cluster columns.
+        // Falls back to columns-from-cluster only when DART has no record.
         const [connId, db, schema, tableName] = selectedTableId.split('::');
 
-        api.get(`/clusters/${connId}/columns`, { params: { schema, table: tableName, database: db } })
+        api.get('/table-definitions/by-key', { params: { connectionId: connId, database: db, schema, table: tableName } })
           .then(res => {
-            const cols = res.data;
+            const t = res.data.table;
             setTableDefinition({
               id: selectedTableId,
-              tableName: tableName,
-              entityLogicalName: '',
-              distributionStyle: 'AUTO',
-              schemaName: schema,
-              verticalName: '',
-              businessArea: '',
-              definition: '',
-              columns: []
+              tableName: t.table_name,
+              entityLogicalName: t.entity_logical_name || '',
+              distributionStyle: t.distribution_style || 'AUTO',
+              schemaName: t.schema_name || schema,
+              verticalName: t.vertical_name || '',
+              businessArea: t.business_area || '',
+              definition: t.definition || '',
+              columns: res.data.columns,
             });
-            setColumns(cols.map((c: any) =>
-              columnFromServer({
-                id: `col-${c.column_name}`,
-                column_name: c.column_name,
-                data_type: c.data_type,
-                is_nullable: c.is_nullable === 'YES' || c.is_nullable === true,
-                is_primary_key: false,
-                default_value: c.column_default || '',
-                action: 'No Change',
-              })
-            ));
+            setColumns(res.data.columns.map(columnFromServer));
             setCurrentStep(3);
-            setSubmissionStatus("draft");
+            setSubmissionStatus(normalizeStatus(t.status));
             setHasUnsavedChanges(false);
           })
           .catch(err => {
-            console.error("Failed to load physical columns:", err);
-            addToast("error", "Failed to fetch table columns from database.");
+            if (err?.response?.status !== 404) {
+              console.error('by-key lookup failed:', err);
+            }
+            api.get(`/clusters/${connId}/columns`, { params: { schema, table: tableName, database: db } })
+              .then(res => {
+                const cols = res.data;
+                setTableDefinition({
+                  id: selectedTableId,
+                  tableName: tableName,
+                  entityLogicalName: '',
+                  distributionStyle: 'AUTO',
+                  schemaName: schema,
+                  verticalName: '',
+                  businessArea: '',
+                  definition: '',
+                  columns: []
+                });
+                setColumns(cols.map((c: any) =>
+                  columnFromServer({
+                    id: `col-${c.column_name}`,
+                    column_name: c.column_name,
+                    data_type: c.data_type,
+                    is_nullable: c.is_nullable === 'YES' || c.is_nullable === true,
+                    is_primary_key: false,
+                    default_value: c.column_default || '',
+                    action: 'No Change',
+                  })
+                ));
+                setCurrentStep(3);
+                setSubmissionStatus("draft");
+                setHasUnsavedChanges(false);
+              })
+              .catch(err2 => {
+                console.error("Failed to load physical columns:", err2);
+                addToast("error", "Failed to fetch table columns from database.");
+              });
           });
       } else {
         // This is a DART managed table definition
@@ -1057,29 +1072,50 @@ export const DashboardProvider: React.FC<{ children: React.ReactNode }> = ({
     [selectedTableId, addToast]
   );
 
-  // Refresh table — reload columns for the currently selected table
+  // Refresh table — reload metadata + columns for the currently selected table.
+  // Handles both id shapes: UUID (DART-managed table) and composite
+  // "connId::db::schema::table" (physical table picked from the cluster list).
+  // Skips placeholder ids ("tbl-new-…") which exist only client-side.
   const refreshTable = useCallback(async () => {
-    if (!selectedTableId) return;
+    if (!selectedTableId || selectedTableId.startsWith('tbl-new-')) return;
     try {
-      const res = await api.get(`/table-definitions/${selectedTableId}`);
+      let res;
+      if (selectedTableId.includes('::')) {
+        const [connId, db, schema, tableName] = selectedTableId.split('::');
+        res = await api.get('/table-definitions/by-key', {
+          params: { connectionId: connId, database: db, schema, table: tableName },
+        });
+      } else {
+        res = await api.get(`/table-definitions/${selectedTableId}`);
+      }
+      const t = res.data.table;
       setTableDefinition({
-        id: res.data.table.id,
-        tableName: res.data.table.table_name,
-        entityLogicalName: res.data.table.entity_logical_name || '',
-        distributionStyle: res.data.table.distribution_style || 'AUTO',
-        schemaName: res.data.table.schema_name || '',
-        verticalName: res.data.table.vertical_name || '',
-        businessArea: res.data.table.business_area || '',
-        definition: res.data.table.definition || '',
-        columns: res.data.columns
+        // Preserve the composite id when that's how the table was selected,
+        // so the selection chain (table list ↔ panel) stays consistent.
+        id: selectedTableId.includes('::') ? selectedTableId : t.id,
+        tableName: t.table_name,
+        entityLogicalName: t.entity_logical_name || '',
+        distributionStyle: t.distribution_style || 'AUTO',
+        schemaName: t.schema_name || '',
+        verticalName: t.vertical_name || '',
+        businessArea: t.business_area || '',
+        definition: t.definition || '',
+        columns: res.data.columns,
       });
       setColumns(res.data.columns.map(columnFromServer));
       setSelectedColumnId("");
       setRightPanelMode("properties");
-      setSubmissionStatus(normalizeStatus(res.data.table.status));
+      setSubmissionStatus(normalizeStatus(t.status));
       setHasUnsavedChanges(false);
       addToast("success", "Table data refreshed.");
-    } catch (err) {
+    } catch (err: any) {
+      if (selectedTableId.includes('::') && err?.response?.status === 404) {
+        // Physical table has no DART record yet — nothing to refresh on the
+        // metadata side. The columns shown came from the cluster directly and
+        // don't change between refreshes of metadata.
+        addToast("info", "No saved DART definition for this physical table.");
+        return;
+      }
       console.error(err);
       addToast("error", "Failed to refresh table data.");
     }

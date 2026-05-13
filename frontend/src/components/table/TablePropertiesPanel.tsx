@@ -45,12 +45,23 @@ export const TablePropertiesPanel: React.FC = () => {
     setHasUnsavedChanges,
     saveChanges,
     addToast,
+    refreshTable,
   } = useDashboard();
 
   const [isEditing, setIsEditing] = useState(false);
   const [draft, setDraft] = useState<TableDefinition | null>(null);
   const [showErrors, setShowErrors] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    try {
+      await refreshTable();
+    } finally {
+      setRefreshing(false);
+    }
+  };
 
   // Reset edit mode when the underlying table changes — prevents stale
   // drafts leaking across table selections.
@@ -150,22 +161,41 @@ export const TablePropertiesPanel: React.FC = () => {
         </svg>
       }
       headerAction={
-        canEdit ? (
-          isEditing ? (
-            <div className="flex items-center gap-2">
-              <Button variant="ghost" size="sm" onClick={cancelEdit} disabled={saving}>
-                Cancel
-              </Button>
-              <Button variant="primary" size="sm" onClick={saveEdit} disabled={saving}>
-                {saving ? "Saving..." : "Save"}
-              </Button>
-            </div>
-          ) : (
-            <Button variant="ghost" size="sm" onClick={startEdit}>
-              Edit
+        isEditing && canEdit ? (
+          <div className="flex items-center gap-2">
+            <Button variant="ghost" size="sm" onClick={cancelEdit} disabled={saving}>
+              Cancel
             </Button>
-          )
-        ) : undefined
+            <Button variant="primary" size="sm" onClick={saveEdit} disabled={saving}>
+              {saving ? "Saving..." : "Save"}
+            </Button>
+          </div>
+        ) : (
+          <div className="flex items-center gap-2">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleRefresh}
+              disabled={refreshing}
+              loading={refreshing}
+              title="Reload table definition and columns from server"
+              icon={
+                !refreshing ? (
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                  </svg>
+                ) : undefined
+              }
+            >
+              {refreshing ? "Refreshing…" : "Refresh"}
+            </Button>
+            {canEdit && (
+              <Button variant="ghost" size="sm" onClick={startEdit}>
+                Edit
+              </Button>
+            )}
+          </div>
+        )
       }
     >
       {isEditing && draft ? (

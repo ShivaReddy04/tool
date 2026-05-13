@@ -35,7 +35,8 @@
       "Bash(git commit -m ' *)",
       "PowerShell(npx tsc --noEmit 2>&1 | Select-Object -First 20)",
       "PowerShell(.\\\\node_modules\\\\.bin\\\\tsc --noEmit 2>&1 | Select-Object -First 20)",
-      "Bash(git *)"
+      "Bash(git *)",
+      "Bash(echo \"EXIT=$?\")"
     ]
   }
 }

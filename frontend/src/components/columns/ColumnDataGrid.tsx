@@ -1,14 +1,8 @@
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
 import { useDashboard } from "../../context/DashboardContext";
-import { Card, Select, Button } from "../common";
-import type { ColumnAction } from "../../types";
-
-const ACTION_OPTIONS = [
-  { value: "No Change", label: "No Change" },
-  { value: "Modify", label: "Modify" },
-  { value: "Add", label: "Add" },
-  { value: "Drop", label: "Drop" },
-];
+import { Card, Button } from "../common";
+import type { ColumnAction, ColumnDefinition } from "../../types";
+import { COLUMN_FIELDS, type ColumnFieldSpec } from "./columnFields";
 
 const actionRowStyles: Record<ColumnAction, string> = {
   "No Change": "",
@@ -17,30 +11,107 @@ const actionRowStyles: Record<ColumnAction, string> = {
   Drop: "bg-red-50 border-l-4 border-l-red-400 line-through opacity-60",
 };
 
-export const ColumnDataGrid: React.FC = () => {
-  const {
-    columns,
-    updateColumn,
-    addColumn,
-    selectedColumnId,
-    setSelectedColumnId,
-    setRightPanelMode,
-  } = useDashboard();
+const baseCellClass =
+  "w-full bg-transparent px-2 py-1 text-xs text-slate-800 border border-transparent rounded focus:bg-white focus:border-indigo-300 focus:ring-1 focus:ring-indigo-200 focus:outline-none";
 
+interface EditableCellProps {
+  field: ColumnFieldSpec;
+  col: ColumnDefinition;
+  isDuplicate: boolean;
+  onUpdate: (id: string, patch: Partial<ColumnDefinition>) => void;
+}
+
+const EditableCell: React.FC<EditableCellProps> = ({ field, col, isDuplicate, onUpdate }) => {
+  const value = field.get(col);
+  const commit = (v: string | number | boolean) => {
+    const next = field.set(col, v);
+    // Patch only the fields the spec actually touched, so context's
+    // updateColumn auto-Modify-promote logic sees the real change set.
+    const patch: Partial<ColumnDefinition> = {};
+    (Object.keys(next) as (keyof ColumnDefinition)[]).forEach((k) => {
+      if ((next as any)[k] !== (col as any)[k]) {
+        (patch as any)[k] = (next as any)[k];
+      }
+    });
+    if (Object.keys(patch).length > 0) onUpdate(col.id, patch);
+  };
+
+  const errorClass =
+    field.key === "columnName" && (isDuplicate || !col.columnName.trim())
+      ? "border-red-300 bg-red-50"
+      : "";
+
+  if (field.kind === "checkbox") {
+    return (
+      <input
+        type="checkbox"
+        checked={!!value}
+        onChange={(e) => commit(e.target.checked)}
+        className="w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+        aria-label={field.label}
+      />
+    );
+  }
+  if (field.kind === "select") {
+    return (
+      <select
+        value={String(value)}
+        onChange={(e) => commit(e.target.value)}
+        className={`${baseCellClass} ${errorClass}`}
+        aria-label={field.label}
+      >
+        {field.options!.map((opt) => (
+          <option key={opt.value} value={opt.value}>
+            {opt.label}
+          </option>
+        ))}
+      </select>
+    );
+  }
+  if (field.kind === "number") {
+    return (
+      <input
+        type="number"
+        value={value as number}
+        onChange={(e) => commit(Number(e.target.value) || 0)}
+        className={`${baseCellClass} ${errorClass}`}
+        aria-label={field.label}
+      />
+    );
+  }
+  return (
+    <input
+      type="text"
+      value={String(value)}
+      onChange={(e) => commit(e.target.value)}
+      className={`${baseCellClass} ${errorClass}`}
+      aria-label={field.label}
+      placeholder={field.required ? "required" : ""}
+      title={field.key === "columnName" && isDuplicate ? "Duplicate column name" : undefined}
+    />
+  );
+};
+
+export const ColumnDataGrid: React.FC = () => {
+  const { columns, updateColumn, addColumn } = useDashboard();
   const [searchTerm, setSearchTerm] = useState("");
+
+  const duplicateColumnNames = useMemo(() => {
+    const seen = new Map<string, number>();
+    const dups = new Set<string>();
+    columns.forEach((c) => {
+      const name = c.columnName.trim().toLowerCase();
+      if (!name) return;
+      const count = (seen.get(name) || 0) + 1;
+      seen.set(name, count);
+      if (count > 1) dups.add(name);
+    });
+    return dups;
+  }, [columns]);
 
   const filteredColumns = columns.filter((col) =>
     col.columnName.toLowerCase().includes(searchTerm.toLowerCase())
   );
-
-  const handleRowClick = (columnId: string) => {
-    setSelectedColumnId(columnId);
-    setRightPanelMode("column-detail");
-  };
-
-  const handleActionChange = (columnId: string, action: string) => {
-    updateColumn(columnId, { action: action as ColumnAction });
-  };
 
   if (columns.length === 0) {
     return null;
@@ -49,7 +120,7 @@ export const ColumnDataGrid: React.FC = () => {
   return (
     <Card
       title="Column Management"
-      subtitle={`${columns.length} columns`}
+      subtitle={`${columns.length} columns — edit any cell to modify`}
       noPadding
     >
       <div className="px-4 py-3 border-b border-slate-100">
@@ -77,78 +148,60 @@ export const ColumnDataGrid: React.FC = () => {
         </div>
       </div>
 
-      <div className="overflow-x-auto">
-        <table className="w-full">
+      <div className="overflow-auto max-h-[60vh]">
+        <table className="border-collapse text-xs">
           <thead>
-            <tr className="border-b border-slate-100">
-              <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">
-                Column Name
+            <tr className="bg-slate-50 border-b border-slate-100">
+              <th
+                className="sticky top-0 z-10 bg-slate-50 px-3 py-2 text-left font-semibold text-slate-600 border-b border-slate-200"
+                style={{ minWidth: 40, width: 40 }}
+              >
+                #
               </th>
-              <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">
-                Data Type
-              </th>
-              <th className="text-center px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">
-                Nullable
-              </th>
-              <th className="text-center px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">
-                PK
-              </th>
-              <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">
-                Classification
-              </th>
-              <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">
-                Action
-              </th>
+              {COLUMN_FIELDS.map((f) => (
+                <th
+                  key={f.key}
+                  className="sticky top-0 z-10 bg-slate-50 text-left px-3 py-2.5 text-xs font-semibold text-slate-500 uppercase tracking-wide whitespace-nowrap border-b border-slate-200"
+                  style={{ minWidth: f.width, width: f.width }}
+                >
+                  {f.label}
+                </th>
+              ))}
             </tr>
           </thead>
           <tbody>
-            {filteredColumns.map((col) => (
-              <tr
-                key={col.id}
-                onClick={() => handleRowClick(col.id)}
-                className={`
-                  border-b border-slate-50 cursor-pointer transition-colors
-                  hover:bg-slate-50
-                  ${selectedColumnId === col.id ? "ring-2 ring-inset ring-indigo-500" : ""}
-                  ${actionRowStyles[col.action]}
-                `}
-              >
-                <td className="px-4 py-3 text-sm font-medium text-slate-800">
-                  {col.columnName}
-                </td>
-                <td className="px-4 py-3 text-sm text-slate-600 font-mono">
-                  {col.dataType}
-                </td>
-                <td className="px-4 py-3 text-center">
-                  {col.isNullable ? (
-                    <span className="text-emerald-500 text-sm">Yes</span>
-                  ) : (
-                    <span className="text-slate-400 text-sm">No</span>
-                  )}
-                </td>
-                <td className="px-4 py-3 text-center">
-                  {col.isPrimaryKey ? (
-                    <span className="inline-flex items-center justify-center w-5 h-5 rounded bg-indigo-100 text-indigo-700">
-                      <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
-                      </svg>
-                    </span>
-                  ) : (
-                    <span className="text-slate-300">—</span>
-                  )}
-                </td>
-                <td className="px-4 py-3 text-sm text-slate-600">
-                  {col.dataClassification}
-                </td>
-                <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
-                  <Select
-                    options={ACTION_OPTIONS}
-                    value={col.action}
-                    onChange={(v) => handleActionChange(col.id, v)}
-                  />
-                </td>
-              </tr>
-            ))}
+            {filteredColumns.map((col, rowIdx) => {
+              const isDup =
+                !!col.columnName.trim() &&
+                duplicateColumnNames.has(col.columnName.trim().toLowerCase());
+              return (
+                <tr
+                  key={col.id}
+                  className={`border-b border-slate-50 hover:bg-slate-50/40 ${actionRowStyles[col.action]}`}
+                >
+                  <td className="px-3 py-1.5 text-slate-500 align-middle">
+                    {rowIdx + 1}
+                  </td>
+                  {COLUMN_FIELDS.map((f) => {
+                    const alignCenter = f.kind === "checkbox";
+                    return (
+                      <td
+                        key={f.key}
+                        className={`px-1 py-1 align-middle ${alignCenter ? "text-center" : ""}`}
+                        style={{ minWidth: f.width, width: f.width }}
+                      >
+                        <EditableCell
+                          field={f}
+                          col={col}
+                          isDuplicate={isDup}
+                          onUpdate={updateColumn}
+                        />
+                      </td>
+                    );
+                  })}
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>

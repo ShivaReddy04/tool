@@ -1,5 +1,5 @@
 import { Request, Response } from 'express';
-import { createOrUpdateTableDefinition, getTableDefinitionDetails, getAllTableDefinitions, deleteTableDefinitionById, getTableReferences } from '../models/table_definition.model';
+import { createOrUpdateTableDefinition, getTableDefinitionDetails, getAllTableDefinitions, deleteTableDefinitionById, getTableReferences, getTableDefinitionByKey } from '../models/table_definition.model';
 import { bulkUpsertColumnDefinitions, getColumnDefinitionsByTableId } from '../models/column_definition.model';
 import { getClusterConnectionConfig } from '../models/cluster.model';
 import { getConnector } from '../services/connector';
@@ -258,6 +258,39 @@ export const getTableDefinition = async (req: Request, res: Response): Promise<v
         res.status(200).json({ table, columns, rows, totalRows, page, pageSize });
     } catch (err) {
         console.error('Get table definition error:', err);
+        res.status(500).json({ error: 'Internal server error' });
+    }
+};
+
+/**
+ * Resolve a physical (connection, database, schema, table) to its DART
+ * table_definition row, returning the same { table, columns } shape as
+ * GET /:id. Used by the developer dashboard when a table picked from the
+ * physical-tables list has already been approved into DART — so its saved
+ * metadata (definition, entity_logical_name, business_area, etc.) and
+ * column attributes can be shown instead of being wiped to defaults.
+ *
+ * 404 means no DART row exists for that physical table — caller falls
+ * back to the columns-from-cluster path.
+ */
+export const getTableDefinitionByCompositeKey = async (req: Request, res: Response): Promise<void> => {
+    try {
+        const { connectionId, database, schema, table } = req.query as Record<string, string | undefined>;
+        if (!connectionId || !database || !schema || !table) {
+            res.status(400).json({
+                error: 'connectionId, database, schema, and table query parameters are required',
+            });
+            return;
+        }
+        const row = await getTableDefinitionByKey(connectionId, database, schema, table);
+        if (!row) {
+            res.status(404).json({ error: 'No DART table definition exists for this physical table' });
+            return;
+        }
+        const columns = await getColumnDefinitionsByTableId(row.id);
+        res.status(200).json({ table: row, columns });
+    } catch (err) {
+        console.error('Get table definition by key error:', err);
         res.status(500).json({ error: 'Internal server error' });
     }
 };
