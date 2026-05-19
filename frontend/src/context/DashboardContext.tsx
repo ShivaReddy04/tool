@@ -47,6 +47,24 @@ const normalizeStatus = (s: string | undefined | null): SubmissionStatus => {
   return "draft";
 };
 
+// Backend errors may attach a `details` field — either a plain string (legacy /
+// validation errors) or a structured object (e.g. the DDL push failure, which
+// carries { details, column, statement, pgCode }). Format both into a single
+// human-readable line for the toast; the raw object stays in console.error.
+const formatErrorWithDetails = (msg: string, details: unknown): string => {
+  if (details == null) return msg;
+  if (typeof details === "string") return `${msg} (${details})`;
+  if (typeof details === "object") {
+    const d = details as Record<string, unknown>;
+    const parts: string[] = [];
+    if (typeof d.details === "string") parts.push(d.details);
+    if (typeof d.pgCode === "string" && d.pgCode) parts.push(`[${d.pgCode}]`);
+    if (typeof d.statement === "string" && d.statement) parts.push(`SQL: ${d.statement}`);
+    if (parts.length) return `${msg} — ${parts.join(" ")}`;
+  }
+  return msg;
+};
+
 interface DashboardContextType {
   // Environment
   clusters: Cluster[];
@@ -486,7 +504,7 @@ const DashboardCoreProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         console.error(err);
         const data = err?.response?.data;
         const msg = data?.error || data?.message || "Failed to push approval database changes.";
-        addToast("error", data?.details ? `${msg} (${data.details})` : msg);
+        addToast("error", formatErrorWithDetails(msg, data?.details));
       }
     },
     [reviewingNotification, markNotificationRead, addNotification, addToast, refreshPendingSubmissions],
@@ -524,7 +542,7 @@ const DashboardCoreProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         console.error(err);
         const data = err?.response?.data;
         const msg = data?.error || data?.message || "Failed to record rejection.";
-        addToast("error", data?.details ? `${msg} (${data.details})` : msg);
+        addToast("error", formatErrorWithDetails(msg, data?.details));
       }
     },
     [reviewingNotification, markNotificationRead, addNotification, addToast, refreshPendingSubmissions],
