@@ -40,7 +40,11 @@
       "Bash(echo \"BACKEND_EXIT=$?\")",
       "Bash(echo \"FRONTEND_EXIT=$?\")",
       "Bash(node *)",
-      "Bash(grep -v \"SECURITY WARNING\\\\|sslmode\\\\|libpq\\\\|dotenv\\\\|Use \\\\`node\\\\|To prepare\\\\|If you want\\\\|See https\")"
+      "Bash(grep -v \"SECURITY WARNING\\\\|sslmode\\\\|libpq\\\\|dotenv\\\\|Use \\\\`node\\\\|To prepare\\\\|If you want\\\\|See https\")",
+      "Bash(xargs wc -l)",
+      "Bash(echo \"exit:$?\")",
+      "Bash(npm install *)",
+      "Bash(npx jest *)"
     ]
   }
 }
