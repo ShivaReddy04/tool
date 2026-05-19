@@ -1,47 +1,20 @@
 import { Request, Response } from 'express';
 import { createSchema, getSchemasByClusterId, deleteSchema } from '../models/schema.model';
+import { HttpError } from '../utils/httpError';
 
 export const addSchema = async (req: Request, res: Response): Promise<void> => {
-    try {
-        const { name, clusterId } = req.body;
-        if (!name || !clusterId) {
-            res.status(400).json({ error: 'Name and clusterId are required' });
-            return;
-        }
-        const schema = await createSchema(name, clusterId);
-        res.status(201).json(schema);
-    } catch (err) {
-        console.error('Add schema error:', err);
-        res.status(500).json({ error: 'Internal server error' });
-    }
+  const { name, clusterId } = req.body as { name: string; clusterId: string };
+  const schema = await createSchema(name, clusterId);
+  res.status(201).json(schema);
 };
 
 export const listSchemas = async (req: Request, res: Response): Promise<void> => {
-    try {
-        const clusterId = req.params.clusterId as string;
-        if (!clusterId) {
-            res.status(400).json({ error: 'Cluster ID is required' });
-            return;
-        }
-        const schemas = await getSchemasByClusterId(clusterId);
-        res.json(schemas);
-    } catch (err) {
-        console.error('List schemas error:', err);
-        res.status(500).json({ error: 'Internal server error' });
-    }
+  const schemas = await getSchemasByClusterId(req.params.clusterId as string);
+  res.json(schemas);
 };
 
 export const removeSchema = async (req: Request, res: Response): Promise<void> => {
-    try {
-        const id = req.params.id as string;
-        const deleted = await deleteSchema(id);
-        if (!deleted) {
-            res.status(404).json({ error: 'Schema not found' });
-            return;
-        }
-        res.status(204).send();
-    } catch (err) {
-        console.error('Delete schema error:', err);
-        res.status(500).json({ error: 'Internal server error' });
-    }
+  const deleted = await deleteSchema(req.params.id as string);
+  if (!deleted) throw new HttpError(404, 'Schema not found');
+  res.status(204).send();
 };

@@ -2,8 +2,17 @@ import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
 import { TokenPayload, AuthTokens } from '../types';
 
-const ACCESS_SECRET = process.env.JWT_ACCESS_SECRET || 'dart-access-secret';
-const REFRESH_SECRET = process.env.JWT_REFRESH_SECRET || 'dart-refresh-secret';
+// Fail at module load if either signing secret is missing. A default secret in
+// production silently lets attackers forge tokens, so we'd rather crash the
+// process than boot in that state. Mirrors the same check in utils/encryption.
+const ACCESS_SECRET = process.env.JWT_ACCESS_SECRET;
+if (!ACCESS_SECRET) {
+  throw new Error('JWT_ACCESS_SECRET environment variable is required');
+}
+const REFRESH_SECRET = process.env.JWT_REFRESH_SECRET;
+if (!REFRESH_SECRET) {
+  throw new Error('JWT_REFRESH_SECRET environment variable is required');
+}
 const ACCESS_EXPIRY = process.env.JWT_ACCESS_EXPIRY || '15m';
 const REFRESH_EXPIRY = process.env.JWT_REFRESH_EXPIRY || '7d';
 

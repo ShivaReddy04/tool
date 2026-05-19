@@ -27,104 +27,142 @@ interface ColumnInfo {
   column_default: string | null;
 }
 
+// ── Pool cache (PostgreSQL / Redshift) ─────────────────
+//
+// Each connector function used to do `new PgPool(...) → query → pool.end()`,
+// which is fine for one-off calls but burns FDs and serializes work when the
+// same target cluster is hit repeatedly (every API request that touches a
+// remote DB). We keep a small bounded LRU of warm pools keyed by the full
+// destination tuple — including password, so credential rotation evicts the
+// stale pool naturally on the next call.
+//
+// Eviction policy:
+//   - Idle TTL: pools untouched for `POOL_IDLE_TTL_MS` are closed on the next
+//     access (lazy sweep — keeps the module timer-free for tests).
+//   - Capacity: at most `MAX_POOLS` entries; oldest-by-lastUsed wins.
+
+const POOL_IDLE_TTL_MS = 5 * 60 * 1000;
+const MAX_POOLS = 16;
+
+interface PoolCacheEntry {
+  pool: PgPool;
+  lastUsed: number;
+}
+
+const pgPoolCache = new Map<string, PoolCacheEntry>();
+
+function pgPoolKey(c: ConnectionConfig): string {
+  return `${c.host}|${c.port}|${c.database}|${c.user}|${c.password}`;
+}
+
+function sweepPgCache(): void {
+  const now = Date.now();
+  for (const [k, entry] of pgPoolCache) {
+    if (now - entry.lastUsed > POOL_IDLE_TTL_MS) {
+      pgPoolCache.delete(k);
+      // Fire-and-forget: closing a stale pool must never block the live request.
+      entry.pool.end().catch((err) => console.warn('Stale pg pool close failed:', err?.message || err));
+    }
+  }
+  if (pgPoolCache.size >= MAX_POOLS) {
+    const sorted = [...pgPoolCache.entries()].sort((a, b) => a[1].lastUsed - b[1].lastUsed);
+    while (pgPoolCache.size >= MAX_POOLS && sorted.length > 0) {
+      const [k, entry] = sorted.shift()!;
+      pgPoolCache.delete(k);
+      entry.pool.end().catch((err) => console.warn('Evicted pg pool close failed:', err?.message || err));
+    }
+  }
+}
+
 // ── PostgreSQL / Redshift ─────────────────
-async function pgConnect(config: ConnectionConfig) {
+async function pgConnect(config: ConnectionConfig): Promise<PgPool> {
+  const key = pgPoolKey(config);
+  const existing = pgPoolCache.get(key);
+  if (existing) {
+    existing.lastUsed = Date.now();
+    return existing.pool;
+  }
+
+  sweepPgCache();
+
   const pool = new PgPool({
     host: config.host,
     port: config.port,
     database: config.database,
     user: config.user,
     password: config.password,
-    max: 2,
+    max: 5,
+    idleTimeoutMillis: 30_000,
     connectionTimeoutMillis: 5000,
     ssl: {
       rejectUnauthorized: false,
     },
   });
-
+  // pg surfaces idle-client errors via the pool's `error` event; without a
+  // handler Node treats them as uncaught and crashes the process.
+  pool.on('error', (err) => console.error('Idle pg client error on cached pool:', err?.message || err));
+  pgPoolCache.set(key, { pool, lastUsed: Date.now() });
   return pool;
+}
+
+/** Test-only: drain and drop all cached pools. */
+export async function _clearPgPoolCache(): Promise<void> {
+  const entries = [...pgPoolCache.values()];
+  pgPoolCache.clear();
+  await Promise.all(entries.map((e) => e.pool.end().catch(() => undefined)));
 }
 
 async function pgGetDatabases(config: ConnectionConfig): Promise<string[]> {
   const pool = await pgConnect(config);
-  try {
-    const res = await pool.query(
-      `SELECT datname FROM pg_database WHERE datistemplate = false ORDER BY datname`
-    );
-    return res.rows.map((r: any) => r.datname);
-  } finally {
-    await pool.end();
-  }
+  const res = await pool.query(
+    `SELECT datname FROM pg_database WHERE datistemplate = false ORDER BY datname`
+  );
+  return res.rows.map((r: any) => r.datname);
 }
 
 async function pgGetSchemas(config: ConnectionConfig): Promise<SchemaInfo[]> {
   const pool = await pgConnect(config);
-  try {
-    const res = await pool.query(
-      `SELECT schema_name FROM information_schema.schemata
-       WHERE schema_name NOT IN ('pg_catalog','information_schema')`
-    );
-    return res.rows;
-  } finally {
-    await pool.end();
-  }
+  const res = await pool.query(
+    `SELECT schema_name FROM information_schema.schemata
+     WHERE schema_name NOT IN ('pg_catalog','information_schema')`
+  );
+  return res.rows;
 }
 
 async function pgGetTables(config: ConnectionConfig, schema: string): Promise<TableInfo[]> {
   const pool = await pgConnect(config);
-  try {
-    const res = await pool.query(
-      `SELECT table_name, table_type FROM information_schema.tables WHERE table_schema=$1`,
-      [schema]
-    );
-    return res.rows;
-  } finally {
-    await pool.end();
-  }
+  const res = await pool.query(
+    `SELECT table_name, table_type FROM information_schema.tables WHERE table_schema=$1`,
+    [schema]
+  );
+  return res.rows;
 }
 
 async function pgGetColumns(config: ConnectionConfig, schema: string, table: string): Promise<ColumnInfo[]> {
   const pool = await pgConnect(config);
-  try {
-    const res = await pool.query(
-      `SELECT column_name, data_type, is_nullable, column_default
-       FROM information_schema.columns WHERE table_schema=$1 AND table_name=$2`,
-      [schema, table]
-    );
-    return res.rows;
-  } finally {
-    await pool.end();
-  }
+  const res = await pool.query(
+    `SELECT column_name, data_type, is_nullable, column_default
+     FROM information_schema.columns WHERE table_schema=$1 AND table_name=$2`,
+    [schema, table]
+  );
+  return res.rows;
 }
 
 async function pgTest(config: ConnectionConfig) {
   const pool = await pgConnect(config);
-  try {
-    await pool.query('SELECT 1');
-    return true;
-  } finally {
-    await pool.end();
-  }
+  await pool.query('SELECT 1');
+  return true;
 }
 
 async function pgGetTableData(config: ConnectionConfig, schema: string, table: string) {
   const pool = await pgConnect(config);
-  try {
-    const res = await pool.query(`SELECT * FROM "${schema}"."${table}" LIMIT 100`);
-    return res.rows;
-  } finally {
-    await pool.end();
-  }
+  const res = await pool.query(`SELECT * FROM "${schema}"."${table}" LIMIT 100`);
+  return res.rows;
 }
 
 async function pgRunQuery(config: ConnectionConfig, queryStr: string, params?: any[]) {
   const pool = await pgConnect(config);
-  try {
-    const res = await pool.query(queryStr, params);
-    return res;
-  } finally {
-    await pool.end();
-  }
+  return pool.query(queryStr, params);
 }
 
 async function pgDryRunDDL(config: ConnectionConfig, ddl: string) {
@@ -136,11 +174,10 @@ async function pgDryRunDDL(config: ConnectionConfig, ddl: string) {
     await client.query('ROLLBACK');
     return true;
   } catch (e) {
-    await client.query('ROLLBACK');
+    try { await client.query('ROLLBACK'); } catch { /* ignore */ }
     throw e;
   } finally {
     client.release();
-    await pool.end();
   }
 }
 
@@ -168,7 +205,6 @@ async function pgRunDDLBatch(config: ConnectionConfig, statements: string[]) {
     throw e;
   } finally {
     client.release();
-    await pool.end();
   }
 }
 

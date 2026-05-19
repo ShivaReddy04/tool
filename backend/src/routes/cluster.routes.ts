@@ -1,8 +1,8 @@
 import { Router } from 'express';
 import { authenticate } from '../middleware/auth';
+import { validate } from '../middleware/validate';
 import {
   create,
-  createCluster,
   list,
   getById,
   update,
@@ -17,20 +17,21 @@ import {
   getTableData,
   updateTableData,
 } from '../controllers/cluster.controller';
+import { createClusterBody, updateClusterBody, testConnectionBody, updateRowBody } from '../schemas/cluster';
 
 const router = Router();
 
 router.use(authenticate);
 
 // CRUD
-router.post('/', createCluster);
+router.post('/', validate(createClusterBody), create);
 router.get('/', list);
 router.get('/:id', getById);
-router.put('/:id', update);
+router.put('/:id', validate(updateClusterBody), update);
 router.delete('/:id', remove);
 
 // Connection testing
-router.post('/test', testDirect);
+router.post('/test', validate(testConnectionBody), testDirect);
 router.post('/:id/test', testById);
 
 // Introspection
@@ -40,6 +41,6 @@ router.get('/:id/schemas', getSchemas);
 router.get('/:id/tables', getTables);
 router.get('/:id/columns', getColumns);
 router.get('/:id/data', getTableData);
-router.post('/:id/data', updateTableData);
+router.post('/:id/data', validate(updateRowBody), updateTableData);
 
 export default router;

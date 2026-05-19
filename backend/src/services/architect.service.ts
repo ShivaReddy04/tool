@@ -4,6 +4,7 @@ import { getColumnDefinitionsByTableId } from '../models/column_definition.model
 import { getClusterConnectionConfig } from '../models/cluster.model';
 import { getConnector } from '../services/connector';
 import { createAuditLog } from '../models/audit_log.model';
+import { buildCreateTableDDL, buildAlterDDL, hasPendingChanges, DbType, DDLColumn } from '../utils/ddl_generator';
 
 export const listTemplates = async () => {
   const rows = await repo.listSubmittedTemplates();
@@ -60,20 +61,41 @@ export const rejectTemplate = async (id: string, reviewerId: string, comment?: s
 export const processTemplate = async (id: string, reviewerId: string) => {
   const table = await repo.getTableDefinitionById(id);
   if (!table) throw new HttpError(404, 'Template not found');
-  const columns = await getColumnDefinitionsByTableId(id);
+  const columns = (await getColumnDefinitionsByTableId(id)) as unknown as DDLColumn[];
   const connInfo = await getClusterConnectionConfig(table.connection_id);
   if (!connInfo) throw new HttpError(404, 'Connection configuration not found');
 
-  const connector = getConnector(connInfo.cluster.db_type as any);
+  const dbType = connInfo.cluster.db_type as DbType;
+  const connector = getConnector(dbType);
 
-  // Basic DDL generation
-  const colsDDL = columns.map((c: any) => `"${c.column_name}" ${c.data_type} ${c.is_nullable ? 'NULL' : 'NOT NULL'}`).join(', ');
-  const ddl = `CREATE TABLE IF NOT EXISTS "${table.schema_name}"."${table.table_name}" (${colsDDL})`;
+  // Mirror the apply pipeline in submission.controller.ts so all DDL flows
+  // through the same dialect-aware generator. Detect whether the physical
+  // table already exists and pick CREATE vs ALTER accordingly.
+  const existingTables: any[] = await connector.getTables(connInfo.config, table.schema_name);
+  const tableExists = existingTables.some(
+    (t: any) => (t.table_name || '').toLowerCase() === table.table_name.toLowerCase()
+  );
 
-  try {
-    await connector.runQuery(connInfo.config, ddl);
-  } catch (e: any) {
-    throw new HttpError(500, 'Failed to execute DDL', e.message || e);
+  const statements: string[] = [];
+  if (!tableExists) {
+    if (dbType === 'postgresql' || dbType === 'redshift') {
+      statements.push(`CREATE SCHEMA IF NOT EXISTS "${table.schema_name.replace(/"/g, '""')}"`);
+    }
+    const create = buildCreateTableDDL(dbType, table.schema_name, table.table_name, columns);
+    if (create) statements.push(create);
+  } else if (hasPendingChanges(columns)) {
+    statements.push(...buildAlterDDL(dbType, table.schema_name, table.table_name, columns));
+  }
+
+  if (statements.length > 0) {
+    try {
+      await connector.runDDLBatch(connInfo.config, statements);
+    } catch (e: any) {
+      throw new HttpError(500, 'Failed to execute DDL', {
+        message: e?.message || String(e),
+        failedStatement: e?.failedStatement,
+      });
+    }
   }
 
   const processedAt = new Date().toISOString();
@@ -84,7 +106,7 @@ export const processTemplate = async (id: string, reviewerId: string) => {
     entity_type: 'table_definition',
     entity_id: id,
     user_name: reviewerId,
-    metadata: { target_cluster: connInfo.cluster.name }
+    metadata: { target_cluster: connInfo.cluster.name, statements },
   });
 
   return updated;

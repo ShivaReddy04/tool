@@ -5,6 +5,8 @@ import {
     previewNaming,
 } from '../controllers/abbreviation.controller';
 import { authenticate, authorize } from '../middleware/auth';
+import { validate } from '../middleware/validate';
+import { replaceAbbreviationsBody, previewNamingBody } from '../schemas/abbreviation';
 
 const router = Router();
 
@@ -16,10 +18,10 @@ router.get('/', listAbbreviations);
 
 // Server-rendered name preview. Useful for very long inputs or for keeping
 // the canonical rule in one place (e.g. a CLI / API client without JS).
-router.post('/preview', previewNaming);
+router.post('/preview', validate(previewNamingBody), previewNaming);
 
 // Admin-only writes. The in-memory dictionary persists until process restart;
 // disk/DB persistence will be added with the admin UI.
-router.put('/', authorize('admin'), replaceAbbreviations);
+router.put('/', authorize('admin'), validate(replaceAbbreviationsBody), replaceAbbreviations);
 
 export default router;

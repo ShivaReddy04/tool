@@ -1,6 +1,4 @@
 import { Request, Response } from 'express';
-import { query } from '../config/db';
-import { encrypt } from '../utils/encryption';
 import {
   createCluster as createClusterModel,
   getAllClusters,
@@ -10,409 +8,183 @@ import {
   getClusterConnectionConfig,
 } from '../models/cluster.model';
 import { getConnector } from '../services/connector';
-import { DATA_TYPES, DbType } from '../utils/dataTypes';
+import { DATA_TYPES } from '../utils/dataTypes';
+import { HttpError } from '../utils/httpError';
+import type { CreateClusterInput, UpdateClusterInput, TestConnectionInput } from '../schemas/cluster';
 
-const VALID_DB_TYPES: DbType[] = ['postgresql', 'mysql', 'mssql', 'redshift'];
+const requireClusterConfig = async (id: string) => {
+  const connConfig = await getClusterConnectionConfig(id);
+  if (!connConfig) throw new HttpError(404, 'Cluster not found');
+  return connConfig;
+};
 
-// POST /api/clusters
 export const create = async (req: Request, res: Response): Promise<void> => {
-  try {
-    const { name, dbType, host, port, databaseName, username, password } = req.body;
-
-    if (!name || !dbType || !host || !port || !databaseName || !username || !password) {
-      res.status(400).json({ error: 'All fields are required: name, dbType, host, port, databaseName, username, password' });
-      return;
-    }
-
-    if (!VALID_DB_TYPES.includes(dbType)) {
-      res.status(400).json({ error: `Invalid dbType. Must be one of: ${VALID_DB_TYPES.join(', ')}` });
-      return;
-    }
-
-    const cluster = await createClusterModel(
-      name, dbType, host, Number(port), databaseName, username, password, req.user!.userId
-    );
-
-    res.status(201).json(cluster);
-  } catch (err) {
-    console.error('Create cluster error:', err);
-    res.status(500).json({ error: 'Failed to create cluster' });
-  }
+  const { name, dbType, host, port, databaseName, username, password } = req.body as CreateClusterInput;
+  const cluster = await createClusterModel(name, dbType, host, port, databaseName, username, password, req.user!.userId);
+  res.status(201).json(cluster);
 };
 
-// GET /api/clusters
 export const list = async (req: Request, res: Response): Promise<void> => {
-  try {
-    // Connections carry encrypted credentials and target real production
-    // clusters — they must not leak across developer accounts. Each
-    // requester sees only the connections they registered themselves;
-    // admins get the global list for governance and unblocking.
-    const role = (req.user?.role || '').toLowerCase();
-    const scopedUserId = role === 'admin' ? undefined : req.user?.userId;
-    const clusters = await getAllClusters(scopedUserId);
-    res.json(clusters);
-  } catch (err) {
-    console.error('List clusters error:', err);
-    res.status(500).json({ error: 'Failed to list clusters' });
-  }
+  // Connections carry encrypted credentials and target real production
+  // clusters — they must not leak across developer accounts. Each requester
+  // sees only the connections they registered themselves; admins get the
+  // global list for governance and unblocking.
+  const role = (req.user?.role || '').toLowerCase();
+  const scopedUserId = role === 'admin' ? undefined : req.user?.userId;
+  res.json(await getAllClusters(scopedUserId));
 };
 
-// GET /api/clusters/:id
 export const getById = async (req: Request, res: Response): Promise<void> => {
-  try {
-    const cluster = await getClusterById(req.params.id as string);
-    if (!cluster) {
-      res.status(404).json({ error: 'Cluster not found' });
-      return;
-    }
-
-    // Don't expose encrypted password
-    res.json({
-      id: cluster.id,
-      name: cluster.name,
-      dbType: cluster.db_type,
-      host: cluster.host,
-      port: cluster.port,
-      databaseName: cluster.database_name,
-      username: cluster.username,
-      status: cluster.status,
-      createdBy: cluster.created_by,
-      createdAt: cluster.created_at,
-    });
-  } catch (err) {
-    console.error('Get cluster error:', err);
-    res.status(500).json({ error: 'Failed to get cluster' });
-  }
+  const cluster = await getClusterById((req.params.id as string));
+  if (!cluster) throw new HttpError(404, 'Cluster not found');
+  // Strip the encrypted password from the wire response.
+  res.json({
+    id: cluster.id,
+    name: cluster.name,
+    dbType: cluster.db_type,
+    host: cluster.host,
+    port: cluster.port,
+    databaseName: cluster.database_name,
+    username: cluster.username,
+    status: cluster.status,
+    createdBy: cluster.created_by,
+    createdAt: cluster.created_at,
+  });
 };
 
-// PUT /api/clusters/:id
 export const update = async (req: Request, res: Response): Promise<void> => {
-  try {
-    const { name, dbType, host, port, databaseName, username, password, status } = req.body;
-
-    if (dbType && !VALID_DB_TYPES.includes(dbType)) {
-      res.status(400).json({ error: `Invalid dbType. Must be one of: ${VALID_DB_TYPES.join(', ')}` });
-      return;
-    }
-
-    if (status && !['active', 'inactive'].includes(status)) {
-      res.status(400).json({ error: 'Status must be active or inactive' });
-      return;
-    }
-
-    const updated = await updateCluster(req.params.id as string, {
-      name, dbType, host, port: port ? Number(port) : undefined,
-      databaseName, username, password, status,
-    });
-
-    if (!updated) {
-      res.status(404).json({ error: 'Cluster not found' });
-      return;
-    }
-
-    res.json(updated);
-  } catch (err) {
-    console.error('Update cluster error:', err);
-    res.status(500).json({ error: 'Failed to update cluster' });
-  }
+  const updated = await updateCluster((req.params.id as string), req.body as UpdateClusterInput);
+  if (!updated) throw new HttpError(404, 'Cluster not found');
+  res.json(updated);
 };
 
-// DELETE /api/clusters/:id
 export const remove = async (req: Request, res: Response): Promise<void> => {
-  try {
-    const deleted = await deleteCluster(req.params.id as string);
-    if (!deleted) {
-      res.status(404).json({ error: 'Cluster not found' });
-      return;
-    }
-    res.json({ message: 'Cluster deleted' });
-  } catch (err) {
-    console.error('Delete cluster error:', err);
-    res.status(500).json({ error: 'Failed to delete cluster' });
-  }
+  const deleted = await deleteCluster((req.params.id as string));
+  if (!deleted) throw new HttpError(404, 'Cluster not found');
+  res.json({ message: 'Cluster deleted' });
 };
 
-// POST /api/clusters/:id/test
+// Connection tests intentionally return `{ success, message }` with a 200 even
+// on failure — the frontend shows the error inline rather than treating it as
+// an exception.
 export const testById = async (req: Request, res: Response): Promise<void> => {
+  const connConfig = await requireClusterConfig((req.params.id as string));
   try {
-    const connConfig = await getClusterConnectionConfig(req.params.id as string);
-    if (!connConfig) {
-      res.status(404).json({ error: 'Cluster not found' });
-      return;
-    }
-
-    const connector = getConnector(connConfig.cluster.db_type);
-    const success = await connector.test(connConfig.config);
-
+    const success = await getConnector(connConfig.cluster.db_type).test(connConfig.config);
     res.json({ success, message: success ? 'Connection successful' : 'Connection failed' });
   } catch (err: any) {
     res.json({ success: false, message: err.message || 'Connection failed' });
   }
 };
 
-// POST /api/clusters/test (test without saving)
 export const testDirect = async (req: Request, res: Response): Promise<void> => {
+  const input = req.body as TestConnectionInput;
+  const database = (input.databaseName || input.database)!;
   try {
-    const { dbType, host, port, databaseName, database, username, password } = req.body;
-    const db = database || databaseName;
-
-    if (!dbType || !host || !port || !db || !username || !password) {
-      res.status(400).json({ error: 'All connection fields are required' });
-      return;
-    }
-
-    if (!VALID_DB_TYPES.includes(dbType)) {
-      res.status(400).json({ error: 'Unsupported database type' });
-      return;
-    }
-
-    const connector = getConnector(dbType);
-    const success = await connector.test({
-      host, port: Number(port), database: db, user: username, password,
+    const success = await getConnector(input.dbType).test({
+      host: input.host,
+      port: input.port,
+      database,
+      user: input.username,
+      password: input.password,
     });
-
     res.json({ success, message: success ? 'Connection successful' : 'Connection failed' });
   } catch (err: any) {
     res.json({ success: false, message: err.message || 'Connection failed' });
   }
 };
 
-// GET /api/clusters/:id/data-types
 export const getDataTypesForCluster = async (req: Request, res: Response): Promise<void> => {
-  try {
-    const cluster = await getClusterById(req.params.id as string);
-    if (!cluster) {
-      res.status(404).json({ error: 'Cluster not found' });
-      return;
-    }
-
-    const types = DATA_TYPES[cluster.db_type];
-    if (!types) {
-      res.status(400).json({ error: `No data types defined for db_type: ${cluster.db_type}` });
-      return;
-    }
-
-    res.json(types);
-  } catch (err) {
-    console.error('Get data types error:', err);
-    res.status(500).json({ error: 'Failed to fetch data types' });
-  }
+  const cluster = await getClusterById((req.params.id as string));
+  if (!cluster) throw new HttpError(404, 'Cluster not found');
+  const types = DATA_TYPES[cluster.db_type];
+  if (!types) throw new HttpError(400, `No data types defined for db_type: ${cluster.db_type}`);
+  res.json(types);
 };
 
-// GET /api/clusters/:id/databases
 export const getDatabases = async (req: Request, res: Response): Promise<void> => {
-  try {
-    const connConfig = await getClusterConnectionConfig(req.params.id as string);
-    if (!connConfig) {
-      res.status(404).json({ error: 'Cluster not found' });
-      return;
-    }
-
-    const connector = getConnector(connConfig.cluster.db_type);
-    const databases = await connector.getDatabases(connConfig.config);
-    res.json(databases);
-  } catch (err: any) {
-    console.error('Get databases error:', err);
-    res.status(500).json({ error: err.message || 'Failed to fetch databases' });
-  }
+  const connConfig = await requireClusterConfig((req.params.id as string));
+  const databases = await getConnector(connConfig.cluster.db_type).getDatabases(connConfig.config);
+  res.json(databases);
 };
 
-// GET /api/clusters/:id/schemas?database=
+const overrideDatabase = (connConfig: Awaited<ReturnType<typeof getClusterConnectionConfig>>, req: Request) => {
+  const database = String(req.query.database || connConfig!.config.database);
+  return { ...connConfig!.config, database };
+};
+
 export const getSchemas = async (req: Request, res: Response): Promise<void> => {
-  try {
-    const connConfig = await getClusterConnectionConfig(req.params.id as string);
-    if (!connConfig) {
-      res.status(404).json({ error: 'Cluster not found' });
-      return;
-    }
-
-    const database = String(req.query.database || connConfig.config.database);
-    const connector = getConnector(connConfig.cluster.db_type);
-    const schemas = await connector.getSchemas({ ...connConfig.config, database });
-    res.json(schemas.map((s: any) => s.schema_name));
-  } catch (err: any) {
-    console.error('Get schemas error:', err);
-    res.status(500).json({ error: err.message || 'Failed to fetch schemas' });
-  }
+  const connConfig = await requireClusterConfig((req.params.id as string));
+  const schemas = await getConnector(connConfig.cluster.db_type).getSchemas(overrideDatabase(connConfig, req));
+  res.json(schemas.map((s: any) => s.schema_name));
 };
 
-// GET /api/clusters/:id/tables?schema=&database=
+const requireSchemaAndTableQuery = (req: Request) => {
+  const schema = String(req.query.schema || '');
+  const table = String(req.query.table || '');
+  if (!schema) throw new HttpError(400, 'schema query parameter is required');
+  if (!table) throw new HttpError(400, 'table query parameter is required');
+  return { schema, table };
+};
+
 export const getTables = async (req: Request, res: Response): Promise<void> => {
-  try {
-    const connConfig = await getClusterConnectionConfig(req.params.id as string);
-    if (!connConfig) {
-      res.status(404).json({ error: 'Cluster not found' });
-      return;
-    }
-
-    const schema = String(req.query.schema || '');
-    if (!schema) {
-      res.status(400).json({ error: 'schema query parameter is required' });
-      return;
-    }
-
-    const database = String(req.query.database || connConfig.config.database);
-    const connector = getConnector(connConfig.cluster.db_type);
-    const tables = await connector.getTables({ ...connConfig.config, database }, schema);
-    res.json(tables);
-  } catch (err: any) {
-    console.error('Get tables error:', err);
-    res.status(500).json({ error: err.message || 'Failed to fetch tables' });
-  }
+  const connConfig = await requireClusterConfig((req.params.id as string));
+  const schema = String(req.query.schema || '');
+  if (!schema) throw new HttpError(400, 'schema query parameter is required');
+  const tables = await getConnector(connConfig.cluster.db_type).getTables(overrideDatabase(connConfig, req), schema);
+  res.json(tables);
 };
 
-// GET /api/clusters/:id/columns?schema=&table=&database=
 export const getColumns = async (req: Request, res: Response): Promise<void> => {
-  try {
-    const connConfig = await getClusterConnectionConfig(req.params.id as string);
-    if (!connConfig) {
-      res.status(404).json({ error: 'Cluster not found' });
-      return;
-    }
-
-    const schema = String(req.query.schema || '');
-    const table = String(req.query.table || '');
-    if (!schema || !table) {
-      res.status(400).json({ error: 'schema and table query parameters are required' });
-      return;
-    }
-
-    const database = String(req.query.database || connConfig.config.database);
-    const connector = getConnector(connConfig.cluster.db_type);
-    const columns = await connector.getColumns({ ...connConfig.config, database }, schema, table);
-    res.json(columns);
-  } catch (err: any) {
-    console.error('Get columns error:', err);
-    res.status(500).json({ error: err.message || 'Failed to fetch columns' });
-  }
+  const connConfig = await requireClusterConfig((req.params.id as string));
+  const { schema, table } = requireSchemaAndTableQuery(req);
+  const columns = await getConnector(connConfig.cluster.db_type).getColumns(overrideDatabase(connConfig, req), schema, table);
+  res.json(columns);
 };
 
-// GET /api/clusters/:id/data?schema=&table=&database=
 export const getTableData = async (req: Request, res: Response): Promise<void> => {
-  try {
-    const connConfig = await getClusterConnectionConfig(req.params.id as string);
-    if (!connConfig) {
-      res.status(404).json({ error: 'Cluster not found' });
-      return;
-    }
-
-    const schema = String(req.query.schema || '');
-    const table = String(req.query.table || '');
-    if (!schema || !table) {
-      res.status(400).json({ error: 'schema and table query parameters are required' });
-      return;
-    }
-
-    const database = String(req.query.database || connConfig.config.database);
-    const connector = getConnector(connConfig.cluster.db_type);
-    const data = await connector.getTableData({ ...connConfig.config, database }, schema, table);
-    res.json(data);
-  } catch (err: any) {
-    console.error('Get table data error:', err);
-    res.status(500).json({ error: err.message || 'Failed to fetch table data' });
-  }
+  const connConfig = await requireClusterConfig((req.params.id as string));
+  const { schema, table } = requireSchemaAndTableQuery(req);
+  const data = await getConnector(connConfig.cluster.db_type).getTableData(overrideDatabase(connConfig, req), schema, table);
+  res.json(data);
 };
 
-// POST /api/clusters/:id/data?schema=&table=&database=
+// NOTE: This handler still concatenates row values into SQL — see issue
+// review. Left intact during the validation refactor; needs parameterization
+// in a follow-up before exposing to untrusted callers.
 export const updateTableData = async (req: Request, res: Response): Promise<void> => {
-  try {
-    const connConfig = await getClusterConnectionConfig(req.params.id as string);
-    if (!connConfig) {
-      res.status(404).json({ error: 'Cluster not found' });
-      return;
-    }
+  const connConfig = await requireClusterConfig((req.params.id as string));
+  const { schema, table } = requireSchemaAndTableQuery(req);
+  const { originalRow, updatedRow } = req.body as { originalRow: Record<string, any>; updatedRow: Record<string, any> };
 
-    const { schema, table } = req.query as { schema: string, table: string };
-    if (!schema || !table) {
-      res.status(400).json({ error: 'schema and table query parameters are required' });
-      return;
-    }
-
-    const { originalRow, updatedRow } = req.body;
-    if (!originalRow || !updatedRow) {
-      res.status(400).json({ error: 'originalRow and updatedRow body parameters are required' });
-      return;
-    }
-
-    const database = String(req.query.database || connConfig.config.database);
-    const connector = getConnector(connConfig.cluster.db_type);
-
-    const dbType = connConfig.cluster.db_type;
-
-    // Build dynamic UPDATE query based on the db type
-    const setKeys = Object.keys(updatedRow).filter(k => updatedRow[k] !== originalRow[k]);
-    if (setKeys.length === 0) {
-      res.json({ success: true, message: "No changes needed" });
-      return;
-    }
-
-    let queryStr = "";
-
-    if (dbType === "postgresql" || dbType === "redshift") {
-      const setClauses = setKeys.map(k => `"${k}" = '${updatedRow[k]}'`).join(", ");
-      const whereClauses = Object.keys(originalRow).map(k => originalRow[k] === null ? `"${k}" IS NULL` : `"${k}" = '${originalRow[k]}'`).join(" AND ");
-      queryStr = `UPDATE "${schema}"."${table}" SET ${setClauses} WHERE ${whereClauses}`;
-    } else if (dbType === "mysql") {
-      const setClauses = setKeys.map(k => `\`${k}\` = '${updatedRow[k]}'`).join(", ");
-      const whereClauses = Object.keys(originalRow).map(k => originalRow[k] === null ? `\`${k}\` IS NULL` : `\`${k}\` = '${originalRow[k]}'`).join(" AND ");
-      queryStr = `UPDATE \`${schema}\`.\`${table}\` SET ${setClauses} WHERE ${whereClauses}`;
-    } else if (dbType === "mssql") {
-      const setClauses = setKeys.map(k => `[${k}] = '${updatedRow[k]}'`).join(", ");
-      const whereClauses = Object.keys(originalRow).map(k => originalRow[k] === null ? `[${k}] IS NULL` : `[${k}] = '${originalRow[k]}'`).join(" AND ");
-      queryStr = `UPDATE [${schema}].[${table}] SET ${setClauses} WHERE ${whereClauses}`;
-    }
-
-    await connector.runQuery({ ...connConfig.config, database }, queryStr);
-
-    res.json({ success: true, message: "Row updated successfully" });
-  } catch (err: any) {
-    console.error('Update table data error:', err);
-    res.status(500).json({ error: err.message || 'Failed to update table data' });
+  const setKeys = Object.keys(updatedRow).filter((k) => updatedRow[k] !== originalRow[k]);
+  if (setKeys.length === 0) {
+    res.json({ success: true, message: 'No changes needed' });
+    return;
   }
-};
 
-export const createCluster = async (req: Request, res: Response) => {
-  try {
-    const {
-      name,
-      dbType,
-      host,
-      port,
-      database,
-      username,
-      password,
-    } = req.body;
-
-    const userId = (req as any).user?.userId || (req as any).user?.id;
-
-    if (!userId) {
-      return res.status(401).json({ error: "Unauthorized" });
-    }
-
-    const passwordEncrypted = encrypt(password);
-
-    const result = await query(
-      `INSERT INTO connections 
-      (name, db_type, host, port, database_name, username, password_encrypted, created_by)
-      VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
-      RETURNING *`,
-      [name, dbType, host, port, database, username, passwordEncrypted, userId]
-    );
-
-    const row = result.rows[0];
-    res.status(201).json({
-      id: row.id,
-      name: row.name,
-      dbType: row.db_type,
-      host: row.host,
-      port: row.port,
-      databaseName: row.database_name,
-      status: row.status,
-      createdBy: row.created_by,
-      createdAt: row.created_at,
-    });
-  } catch (err: any) {
-    console.error("Cluster Error:", err);
-    res.status(500).json({ error: err.message });
+  const dbType = connConfig.cluster.db_type;
+  let queryStr = '';
+  if (dbType === 'postgresql' || dbType === 'redshift') {
+    const setClauses = setKeys.map((k) => `"${k}" = '${updatedRow[k]}'`).join(', ');
+    const whereClauses = Object.keys(originalRow)
+      .map((k) => (originalRow[k] === null ? `"${k}" IS NULL` : `"${k}" = '${originalRow[k]}'`))
+      .join(' AND ');
+    queryStr = `UPDATE "${schema}"."${table}" SET ${setClauses} WHERE ${whereClauses}`;
+  } else if (dbType === 'mysql') {
+    const setClauses = setKeys.map((k) => `\`${k}\` = '${updatedRow[k]}'`).join(', ');
+    const whereClauses = Object.keys(originalRow)
+      .map((k) => (originalRow[k] === null ? `\`${k}\` IS NULL` : `\`${k}\` = '${originalRow[k]}'`))
+      .join(' AND ');
+    queryStr = `UPDATE \`${schema}\`.\`${table}\` SET ${setClauses} WHERE ${whereClauses}`;
+  } else if (dbType === 'mssql') {
+    const setClauses = setKeys.map((k) => `[${k}] = '${updatedRow[k]}'`).join(', ');
+    const whereClauses = Object.keys(originalRow)
+      .map((k) => (originalRow[k] === null ? `[${k}] IS NULL` : `[${k}] = '${originalRow[k]}'`))
+      .join(' AND ');
+    queryStr = `UPDATE [${schema}].[${table}] SET ${setClauses} WHERE ${whereClauses}`;
   }
+
+  await getConnector(dbType).runQuery(overrideDatabase(connConfig, req), queryStr);
+  res.json({ success: true, message: 'Row updated successfully' });
 };
