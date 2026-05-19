@@ -211,12 +211,17 @@ export const handleReviewAndSync = async (req: Request, res: Response): Promise<
       const baseMessage = syncErr?.message || String(syncErr);
       const detail = column ? `Column "${column}": ${baseMessage}` : baseMessage;
       if (syncErr instanceof HttpError) throw syncErr;
-      throw new HttpError(500, 'Review recorded, but database schema push failed.', {
-        details: detail,
-        column,
-        statement: failedStatement,
-        pgCode: syncErr?.code,
-      });
+      throw new HttpError(
+        500,
+        'Review recorded, but database schema push failed.',
+        {
+          details: detail,
+          column,
+          statement: failedStatement,
+          pgCode: syncErr?.code,
+        },
+        true,
+      );
     }
   }
 

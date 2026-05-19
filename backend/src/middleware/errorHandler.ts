@@ -22,10 +22,12 @@ export const errorHandler = (err: any, _req: Request, res: Response, next: NextF
   let status = 500;
   let message = 'Internal server error';
   let details: unknown = err?.details;
+  let exposeInProd = false;
 
   if (err instanceof HttpError) {
     status = err.status;
     message = err.message;
+    exposeInProd = err.exposeDetails;
   } else if (typeof err?.code === 'string' && PG_ERROR_MAP[err.code]) {
     const mapped = PG_ERROR_MAP[err.code];
     status = mapped.status;
@@ -46,7 +48,7 @@ export const errorHandler = (err: any, _req: Request, res: Response, next: NextF
   // zod issues). Only surface it outside production where operators are
   // expected to be debugging.
   const body: { error: string; details?: unknown } = { error: message };
-  if (process.env.NODE_ENV !== 'production' && details !== undefined) {
+  if (details !== undefined && (exposeInProd || process.env.NODE_ENV !== 'production')) {
     body.details = details;
   }
   res.status(status).json(body);
