@@ -13,6 +13,63 @@ import type { SubmitForReviewInput, ReviewSubmissionInput } from '../schemas/sub
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+// Builds the same statement list that the apply step will run at approval
+// time. Shared by submit-time pre-flight and the approval handler so both
+// agree on exactly what DDL is being validated / executed.
+const computeApplyStatements = async (
+  connector: any,
+  dbType: DbType,
+  config: any,
+  schemaName: string,
+  tableName: string,
+  columns: DDLColumn[],
+): Promise<string[]> => {
+  const existingTables: any[] = await connector.getTables(config, schemaName);
+  const tableExists = existingTables.some(
+    (t) => (t.table_name || '').toLowerCase() === tableName.toLowerCase(),
+  );
+
+  const statements: string[] = [];
+  if (!tableExists) {
+    if (dbType === 'postgresql' || dbType === 'redshift') {
+      statements.push(`CREATE SCHEMA IF NOT EXISTS "${schemaName.replace(/"/g, '""')}"`);
+    }
+    const create = buildCreateTableDDL(dbType, schemaName, tableName, columns);
+    if (create) statements.push(create);
+  } else if (hasPendingChanges(columns)) {
+    statements.push(...buildAlterDDL(dbType, schemaName, tableName, columns));
+  }
+  return statements;
+};
+
+// Turns a connector/driver error into the same structured detail object that
+// the approval handler returns (`{ details, column, statement, pgCode }`) so
+// pre-flight failures look identical to apply-time failures on the client.
+const buildDDLErrorDetail = (err: any) => {
+  const failedStatement: string | undefined = err?.failedStatement;
+  let column: string | undefined;
+  if (failedStatement) {
+    const altered = failedStatement.match(
+      /(?:ADD|ALTER|MODIFY|DROP)\s+COLUMN\s+["`[]?([A-Za-z_][A-Za-z0-9_]*)/i,
+    );
+    if (altered) column = altered[1];
+    if (!column) {
+      const created = failedStatement.match(
+        /CREATE\s+TABLE\s+[^(]*\(\s*["`[]?([A-Za-z_][A-Za-z0-9_]*)/i,
+      );
+      if (created) column = created[1];
+    }
+  }
+  const baseMessage = err?.message || String(err);
+  const detail = column ? `Column "${column}": ${baseMessage}` : baseMessage;
+  return {
+    details: detail,
+    column,
+    statement: failedStatement,
+    pgCode: err?.code,
+  };
+};
+
 export const submitTableForReview = async (req: Request, res: Response): Promise<void> => {
   const { tableId, assignedArchitectId } = req.body as SubmitForReviewInput;
   const submittedBy = req.user?.userId;
@@ -52,9 +109,44 @@ export const submitTableForReview = async (req: Request, res: Response): Promise
   const tableSnapshot = await getTableDefinitionDetails(tableDefinitionId);
   if (!tableSnapshot) throw new HttpError(404, 'Table definition not found for the provided tableId');
 
+  const columnsSnapshot = await getColumnDefinitionsByTableId(tableDefinitionId);
+
+  // Pre-flight: dry-run the same DDL the approval would execute against the
+  // target cluster, inside a transaction we always roll back. Catches data /
+  // type incompatibilities (e.g. ALTER COLUMN TYPE TIMESTAMP failing because
+  // the column holds non-castable strings) before the architect ever sees the
+  // submission. MySQL DDL auto-commits so dry-run is impossible there — fall
+  // back to apply-time validation on that backend.
+  const connInfo = await getClusterConnectionConfig(tableSnapshot.connection_id);
+  if (!connInfo) throw new HttpError(404, 'Connection configuration not found');
+  const dbType = connInfo.cluster.db_type as DbType;
+  const connector = getConnector(dbType);
+
+  if (connector.supportsDDLDryRun) {
+    const statements = await computeApplyStatements(
+      connector,
+      dbType,
+      connInfo.config,
+      tableSnapshot.schema_name,
+      tableSnapshot.table_name,
+      columnsSnapshot as unknown as DDLColumn[],
+    );
+    if (statements.length > 0) {
+      try {
+        await connector.dryRunDDLBatch(connInfo.config, statements);
+      } catch (dryErr: any) {
+        throw new HttpError(
+          400,
+          'Submission rejected: proposed schema change cannot be applied to the target cluster.',
+          buildDDLErrorDetail(dryErr),
+          true,
+        );
+      }
+    }
+  }
+
   await updateTableStatus(tableDefinitionId, 'submitted');
 
-  const columnsSnapshot = await getColumnDefinitionsByTableId(tableDefinitionId);
   const payload: SubmissionPayload = { table: tableSnapshot, columns: columnsSnapshot };
   const submission = await createSubmission(tableDefinitionId, submittedBy, assignedArchitectId, payload);
 
@@ -158,21 +250,14 @@ export const handleReviewAndSync = async (req: Request, res: Response): Promise<
       const dbType = connInfo.cluster.db_type as DbType;
       const connector = getConnector(dbType);
 
-      const existingTables: any[] = await connector.getTables(connInfo.config, tableDef.schema_name);
-      const tableExists = existingTables.some(
-        (t) => (t.table_name || '').toLowerCase() === tableDef.table_name.toLowerCase(),
+      const statements = await computeApplyStatements(
+        connector,
+        dbType,
+        connInfo.config,
+        tableDef.schema_name,
+        tableDef.table_name,
+        snapshotColumns,
       );
-
-      const statements: string[] = [];
-      if (!tableExists) {
-        if (dbType === 'postgresql' || dbType === 'redshift') {
-          statements.push(`CREATE SCHEMA IF NOT EXISTS "${tableDef.schema_name.replace(/"/g, '""')}"`);
-        }
-        const create = buildCreateTableDDL(dbType, tableDef.schema_name, tableDef.table_name, snapshotColumns);
-        if (create) statements.push(create);
-      } else if (hasPendingChanges(snapshotColumns)) {
-        statements.push(...buildAlterDDL(dbType, tableDef.schema_name, tableDef.table_name, snapshotColumns));
-      }
 
       if (statements.length > 0) {
         console.log('[approval] Applying DDL to', connInfo.cluster.name, statements);
@@ -198,28 +283,11 @@ export const handleReviewAndSync = async (req: Request, res: Response): Promise<
       // runDDLBatch attaches the failing statement so we can name the column
       // that broke. Re-throw as an HttpError carrying the structured detail —
       // errorHandler will serialize it.
-      const failedStatement: string | undefined = syncErr?.failedStatement;
-      let column: string | undefined;
-      if (failedStatement) {
-        const altered = failedStatement.match(/(?:ADD|ALTER|MODIFY|DROP)\s+COLUMN\s+["`[]?([A-Za-z_][A-Za-z0-9_]*)/i);
-        if (altered) column = altered[1];
-        if (!column) {
-          const created = failedStatement.match(/CREATE\s+TABLE\s+[^(]*\(\s*["`[]?([A-Za-z_][A-Za-z0-9_]*)/i);
-          if (created) column = created[1];
-        }
-      }
-      const baseMessage = syncErr?.message || String(syncErr);
-      const detail = column ? `Column "${column}": ${baseMessage}` : baseMessage;
       if (syncErr instanceof HttpError) throw syncErr;
       throw new HttpError(
         500,
         'Review recorded, but database schema push failed.',
-        {
-          details: detail,
-          column,
-          statement: failedStatement,
-          pgCode: syncErr?.code,
-        },
+        buildDDLErrorDetail(syncErr),
         true,
       );
     }

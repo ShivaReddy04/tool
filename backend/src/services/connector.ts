@@ -181,6 +181,31 @@ async function pgDryRunDDL(config: ConnectionConfig, ddl: string) {
   }
 }
 
+// Same shape as pgRunDDLBatch but always rolls back. Used by the submit
+// pre-flight to surface "this DDL won't apply against current data" errors
+// (e.g. ALTER ... TYPE TIMESTAMP USING ::TIMESTAMP failing because the column
+// holds non-castable strings) before the architect ever sees the submission.
+async function pgDryRunDDLBatch(config: ConnectionConfig, statements: string[]) {
+  if (statements.length === 0) return;
+  const pool = await pgConnect(config);
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    for (let i = 0; i < statements.length; i++) {
+      try {
+        await client.query(statements[i]);
+      } catch (e: any) {
+        e.failedStatement = statements[i];
+        e.failedStatementIndex = i;
+        throw e;
+      }
+    }
+  } finally {
+    try { await client.query('ROLLBACK'); } catch { /* ignore */ }
+    client.release();
+  }
+}
+
 async function pgRunDDLBatch(config: ConnectionConfig, statements: string[]) {
   if (statements.length === 0) return;
   const pool = await pgConnect(config);
@@ -425,6 +450,28 @@ async function mssqlDryRunDDL(config: ConnectionConfig, ddl: string) {
   }
 }
 
+async function mssqlDryRunDDLBatch(config: ConnectionConfig, statements: string[]) {
+  if (statements.length === 0) return;
+  const pool = await mssqlConnect(config);
+  const transaction = new sql.Transaction(pool);
+  try {
+    await transaction.begin();
+    for (let i = 0; i < statements.length; i++) {
+      try {
+        const req = new sql.Request(transaction);
+        await req.query(statements[i]);
+      } catch (inner: any) {
+        inner.failedStatement = statements[i];
+        inner.failedStatementIndex = i;
+        throw inner;
+      }
+    }
+  } finally {
+    try { await transaction.rollback(); } catch { /* ignore */ }
+    await pool.close();
+  }
+}
+
 async function mssqlRunDDLBatch(config: ConnectionConfig, statements: string[]) {
   if (statements.length === 0) return;
   const pool = await mssqlConnect(config);
@@ -470,6 +517,8 @@ const connectors: Record<DbType, any> = {
     runQuery: pgRunQuery,
     dryRunDDL: pgDryRunDDL,
     runDDLBatch: pgRunDDLBatch,
+    dryRunDDLBatch: pgDryRunDDLBatch,
+    supportsDDLDryRun: true,
   },
   redshift: {
     test: pgTest,
@@ -481,6 +530,8 @@ const connectors: Record<DbType, any> = {
     runQuery: pgRunQuery,
     dryRunDDL: pgDryRunDDL,
     runDDLBatch: pgRunDDLBatch,
+    dryRunDDLBatch: pgDryRunDDLBatch,
+    supportsDDLDryRun: true,
   },
   mysql: {
     test: mysqlTest,
@@ -492,6 +543,8 @@ const connectors: Record<DbType, any> = {
     runQuery: mysqlRunQuery,
     dryRunDDL: mysqlDryRunDDL,
     runDDLBatch: mysqlRunDDLBatch,
+    // MySQL DDL auto-commits; no safe dry-run. Submit pre-flight will skip.
+    supportsDDLDryRun: false,
   },
   mssql: {
     test: mssqlTest,
@@ -503,6 +556,8 @@ const connectors: Record<DbType, any> = {
     runQuery: mssqlRunQuery,
     dryRunDDL: mssqlDryRunDDL,
     runDDLBatch: mssqlRunDDLBatch,
+    dryRunDDLBatch: mssqlDryRunDDLBatch,
+    supportsDDLDryRun: true,
   },
 };
 

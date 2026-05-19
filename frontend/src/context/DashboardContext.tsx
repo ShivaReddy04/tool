@@ -459,10 +459,8 @@ const DashboardCoreProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       } catch (err: any) {
         console.error(err);
         const data = err?.response?.data;
-        const parts = [data?.error || "Failed to submit for review."];
-        if (data?.message) parts.push(`(${data.message})`);
-        if (data?.code) parts.push(`[${data.code}]`);
-        addToast("error", parts.join(" "));
+        const msg = data?.error || "Failed to submit for review.";
+        addToast("error", formatErrorWithDetails(msg, data?.details));
         return false;
       }
     },
