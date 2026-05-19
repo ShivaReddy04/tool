@@ -2,7 +2,8 @@ import React from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext";
 import { useDashboard } from "../../context/DashboardContext";
-import { Select, Button } from "../common";
+import { Button } from "../common";
+import { TablePickerDropdown } from "./TablePickerDropdown";
 
 export const TableToolbar: React.FC = () => {
   const { hasRole } = useAuth();
@@ -16,10 +17,9 @@ export const TableToolbar: React.FC = () => {
     refreshTable,
   } = useDashboard();
 
-  const tableOptions = tables.map((t) => ({
-    value: t.id,
-    label: t.name,
-  }));
+  const pendingCount = tables.filter(
+    (t) => t.status === "draft" || t.status === "submitted" || t.status === "rejected",
+  ).length;
 
   // Picking a table keeps you on /dashboard — the edit view renders inline
   // when tableDefinition is populated. No navigation.
@@ -30,13 +30,20 @@ export const TableToolbar: React.FC = () => {
 
   return (
     <div className="space-y-3">
-      <Select
+      <TablePickerDropdown
         label="Select Table"
-        options={tableOptions}
+        tables={tables}
         value={selectedTableId}
         onChange={handleTableChange}
         placeholder="Choose a table"
       />
+
+      {pendingCount > 0 && (
+        <p className="text-xs text-amber-700">
+          {pendingCount} table{pendingCount === 1 ? "" : "s"} with pending
+          changes awaiting architect approval.
+        </p>
+      )}
 
       <div className="flex flex-wrap gap-2">
         <Button

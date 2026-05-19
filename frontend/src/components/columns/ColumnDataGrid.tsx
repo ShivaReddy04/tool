@@ -102,8 +102,20 @@ const EditableCell: React.FC<EditableCellProps> = ({ field, col, isDuplicate, de
 };
 
 export const ColumnDataGrid: React.FC = () => {
-  const { columns, updateColumn, addColumn } = useDashboard();
+  const { columns, updateColumn, addColumn, submissionStatus } = useDashboard();
   const [searchTerm, setSearchTerm] = useState("");
+
+  // A column whose action is anything other than 'No Change' exists only in
+  // DART metadata — it has not been pushed to the target cluster yet. Surface
+  // that explicitly so a developer doesn't mistake the colored row for a live
+  // schema change. `applied` means the architect approved and DDL ran, so we
+  // suppress the banner there even if action labels haven't been reset yet.
+  const pendingCount = useMemo(
+    () => columns.filter((c) => c.action !== "No Change").length,
+    [columns],
+  );
+  const showPendingBanner =
+    pendingCount > 0 && submissionStatus !== "approved";
 
   const duplicateColumnNames = useMemo(() => {
     const seen = new Map<string, number>();
@@ -142,9 +154,41 @@ export const ColumnDataGrid: React.FC = () => {
   return (
     <Card
       title="Column Management"
-      subtitle={`${columns.length} columns — edit any cell to modify`}
+      subtitle={
+        pendingCount > 0
+          ? `${columns.length} columns — ${pendingCount} pending architect review`
+          : `${columns.length} columns — edit any cell to modify`
+      }
       noPadding
     >
+      {showPendingBanner && (
+        <div
+          className="px-4 py-2.5 bg-amber-50 border-b border-amber-200 text-xs text-amber-900 flex items-start gap-2"
+          role="status"
+        >
+          <svg
+            className="w-4 h-4 mt-0.5 flex-shrink-0 text-amber-600"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2}
+              d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"
+            />
+          </svg>
+          <div>
+            <span className="font-semibold">
+              {pendingCount} pending change{pendingCount === 1 ? "" : "s"} —
+              not yet applied to the target database.
+            </span>{" "}
+            These rows (added / modified / dropped) take effect only after an
+            architect approves the submission.
+          </div>
+        </div>
+      )}
       <div className="px-4 py-3 border-b border-slate-100">
         <div className="relative">
           <svg

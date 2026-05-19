@@ -401,6 +401,17 @@ const DashboardCoreProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         setColumns(res.data.columns.map(columnFromServer));
       }
 
+      // Reflect the saved status on the cached picker entry so the pending
+      // indicator updates without waiting for the next list refresh.
+      const savedTable = res.data.table;
+      setTables((prev) =>
+        prev.map((t) =>
+          t.id === savedTable.id || t.name === savedTable.table_name
+            ? { ...t, id: savedTable.id, status: savedTable.status }
+            : t,
+        ),
+      );
+
       setHasUnsavedChanges(false);
       addToast("success", "Changes saved successfully.");
       return res.data.table.id as string;
@@ -645,6 +656,7 @@ const DashboardCoreProvider: React.FC<{ children: React.ReactNode }> = ({ childr
           columnCount: savedColumns.length,
           createdAt: saved.created_at || new Date().toISOString(),
           updatedAt: saved.updated_at || new Date().toISOString(),
+          status: saved.status || "draft",
         };
         setTables((prev) => {
           const filtered = prev.filter((t) => t.name !== summary.name);
@@ -741,6 +753,7 @@ const DashboardCoreProvider: React.FC<{ children: React.ReactNode }> = ({ childr
           columnCount: 0,
           createdAt: t.created_at,
           updatedAt: t.updated_at,
+          status: t.status,
         }));
         setTables((prev) => {
           const physicalOnly = prev.filter((p) => p.id.includes("::"));

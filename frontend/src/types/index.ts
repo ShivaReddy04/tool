@@ -49,6 +49,9 @@ export interface TableSummary {
   columnCount: number;
   createdAt: string;
   updatedAt: string;
+  /** DART workflow status for this row. Absent for physical-only tables
+   *  (those discovered on the cluster but not yet tracked in DART). */
+  status?: "draft" | "submitted" | "approved" | "rejected" | "applied" | "processed";
 }
 
 export type DistributionStyle = "KEY" | "EVEN" | "ALL" | "AUTO";
