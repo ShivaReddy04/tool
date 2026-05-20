@@ -109,13 +109,6 @@ async function pgConnect(config: ConnectionConfig): Promise<PgPool> {
   return pool;
 }
 
-/** Test-only: drain and drop all cached pools. */
-export async function _clearPgPoolCache(): Promise<void> {
-  const entries = [...pgPoolCache.values()];
-  pgPoolCache.clear();
-  await Promise.all(entries.map((e) => e.pool.end().catch(() => undefined)));
-}
-
 /**
  * Drain and drop the cached pg pool for a specific connection tuple. Called
  * after a cluster row is deleted so the FD is released immediately instead of

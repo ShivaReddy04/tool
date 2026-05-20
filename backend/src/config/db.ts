@@ -109,5 +109,3 @@ export const withTransaction = async <T>(
     client.release();
   }
 };
-
-export default { getPool, query, withTransaction };

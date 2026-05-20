@@ -62,12 +62,6 @@ export const testConnectionBody = clusterFieldsBase
   })
   .transform(normalizeDatabaseAlias);
 
-export const introspectQuery = z.object({
-  database: z.string().trim().min(1).optional(),
-  schema: z.string().trim().min(1).optional(),
-  table: z.string().trim().min(1).optional(),
-});
-
 export const updateRowBody = z.object({
   originalRow: z.record(z.string(), z.unknown()),
   updatedRow: z.record(z.string(), z.unknown()),

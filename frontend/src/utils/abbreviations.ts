@@ -52,9 +52,6 @@ const rebuildIndexes = () => {
 };
 rebuildIndexes();
 
-export const getAbbreviationDictionary = (): AbbreviationEntry[] =>
-  dictionary.map((e) => ({ ...e }));
-
 export const setAbbreviationDictionary = (entries: AbbreviationEntry[]): void => {
   dictionary = entries
     .filter((e) => e && e.full && e.abbreviation)

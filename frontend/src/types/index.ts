@@ -134,17 +134,6 @@ export interface ColumnDefinition {
   sourceDatabaseName?: string;
 }
 
-export interface EnvironmentState {
-  selectedClusterId: string;
-  selectedSchemaId: string;
-}
-
-export interface ValidationError {
-  field: string;
-  message: string;
-  rowIndex?: number;
-}
-
 export interface SelectOption {
   value: string;
   label: string;

@@ -64,17 +64,5 @@ export const dryRunTableBody = z.object({
   })).default([]),
 });
 
-export const tableByKeyQuery = z.object({
-  connectionId: uuid,
-  database: z.string().trim().min(1),
-  schema: z.string().trim().min(1),
-  table: z.string().trim().min(1),
-});
-
-export const listTableDefinitionsQuery = z.object({
-  connectionId: uuid,
-  schemaName: z.string().trim().min(1),
-});
-
 export type SaveTableDefinitionInput = z.infer<typeof saveTableDefinitionBody>;
 export type DryRunTableInput = z.infer<typeof dryRunTableBody>;

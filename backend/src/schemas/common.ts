@@ -25,5 +25,3 @@ export const tableName = sqlIdentifier('Table name', 255);
 export const columnName = sqlIdentifier('Column name', 255);
 
 export const dbType = z.enum(['postgresql', 'mysql', 'mssql', 'redshift']);
-
-export const idParam = z.object({ id: uuid });

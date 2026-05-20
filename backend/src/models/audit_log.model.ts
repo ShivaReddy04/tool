@@ -29,24 +29,3 @@ export const createAuditLog = async (log: AuditLog): Promise<AuditLog> => {
     const result = await query(q, values);
     return result.rows[0];
 };
-
-export const getAuditLogs = async (entityType?: string, entityId?: string): Promise<AuditLog[]> => {
-    let q = `SELECT * FROM audit_logs`;
-    const params: any[] = [];
-
-    if (entityType) {
-        params.push(entityType);
-        q += ` WHERE entity_type = $${params.length}`;
-    }
-
-    if (entityId) {
-        params.push(entityId);
-        q += params.length === 1 ? ` WHERE ` : ` AND `;
-        q += `entity_id = $${params.length}`;
-    }
-
-    q += ` ORDER BY created_at DESC LIMIT 100`;
-
-    const result = await query(q, params);
-    return result.rows;
-};

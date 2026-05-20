@@ -31,11 +31,6 @@ export const testConnection = async (conn: {
   return data;
 };
 
-export interface DeleteConnectionReferences {
-  warnings: string[];
-  references: { tableDefinitions: number; changeRequests: number };
-}
-
 /**
  * Delete a connection. Without `force`, the backend returns 409 if related
  * table definitions / change requests exist; the thrown error then carries
@@ -60,21 +55,7 @@ export const fetchTables = async (connectionId: string, schema: string, database
   return data;
 };
 
-export const fetchColumns = async (connectionId: string, schema: string, table: string, database?: string): Promise<any[]> => {
-  const { data } = await api.get(`/clusters/${connectionId}/columns`, { params: { schema, table, ...(database ? { database } : {}) } });
-  return data;
-};
-
 export const fetchTableData = async (connectionId: string, schema: string, table: string, database?: string): Promise<any[]> => {
   const { data } = await api.get(`/clusters/${connectionId}/data`, { params: { schema, table, ...(database ? { database } : {}) } });
-  return data;
-};
-
-export const updateTableData = async (connectionId: string, schema: string, table: string, originalRow: any, updatedRow: any, database?: string): Promise<void> => {
-  await api.post(`/clusters/${connectionId}/data`, { originalRow, updatedRow }, { params: { schema, table, ...(database ? { database } : {}) } });
-};
-
-export const fetchDataTypes = async (connectionId: string): Promise<string[]> => {
-  const { data } = await api.get(`/clusters/${connectionId}/data-types`);
   return data;
 };
