@@ -172,12 +172,19 @@ export const removeTableDefinition = async (req: Request, res: Response): Promis
   if (!force) {
     const refs = await getTableReferences(id);
     if (refs.pendingSubmissions > 0) {
-      throw new HttpError(409, 'Table has related entities', {
-        warnings: [
-          `This table has ${refs.pendingSubmissions} pending submission${refs.pendingSubmissions === 1 ? '' : 's'} awaiting architect review.`,
-        ],
-        references: refs,
-      });
+      // exposeDetails=true so warnings reach the client in production; the
+      // UI uses them to render a "confirm cascade" dialog.
+      throw new HttpError(
+        409,
+        'Table has related entities',
+        {
+          warnings: [
+            `This table has ${refs.pendingSubmissions} pending submission${refs.pendingSubmissions === 1 ? '' : 's'} awaiting architect review.`,
+          ],
+          references: refs,
+        },
+        true,
+      );
     }
   }
 

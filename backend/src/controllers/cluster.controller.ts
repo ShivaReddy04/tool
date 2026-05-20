@@ -92,10 +92,16 @@ export const remove = async (req: Request, res: Response): Promise<void> => {
           } will also be deleted.`,
         );
       }
-      throw new HttpError(409, 'Connection has related entities', {
-        warnings,
-        references: refs,
-      });
+      // exposeDetails=true so the cascade warnings reach the client in
+      // production — the frontend uses them to render the "type DELETE to
+      // confirm" second dialog. Without it, errorHandler strips `details`
+      // and the user sees a bare "has related entities" toast instead.
+      throw new HttpError(
+        409,
+        'Connection has related entities',
+        { warnings, references: refs },
+        true,
+      );
     }
   }
 
