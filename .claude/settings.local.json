@@ -45,7 +45,11 @@
       "Bash(echo \"exit:$?\")",
       "Bash(npm install *)",
       "Bash(npx jest *)",
-      "PowerShell(npx tsc --noEmit 2>&1 | Select-Object -First 50)"
+      "PowerShell(npx tsc --noEmit 2>&1 | Select-Object -First 50)",
+      "Bash(git show *)",
+      "Read(//tmp/**)",
+      "Bash(cp /tmp/CreateTablePage_original.tsx /c/Users/panya/Desktop/dart/frontend/src/pages/CreateTablePage.tsx)",
+      "Read(//c/Users/panya/Desktop/dart/frontend/src/pages/**)"
     ]
   }
 }
