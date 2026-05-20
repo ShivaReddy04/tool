@@ -198,14 +198,6 @@ export const CreateTablePage: React.FC = () => {
     []
   );
 
-  const isValid =
-    tableNameValidation.valid &&
-    !!formData.entityLogicalName.trim() &&
-    schemaValidation.valid &&
-    namedColumns.length > 0 &&
-    duplicateColumnNames.size === 0 &&
-    defaultErrors.size === 0;
-
   const handleCancel = () => {
     navigate("/dashboard");
   };
@@ -297,7 +289,7 @@ export const CreateTablePage: React.FC = () => {
               <Button variant="secondary" onClick={handleCancel} disabled={isSaving}>
                 Cancel
               </Button>
-              <Button variant="primary" disabled={!isValid || isSaving} onClick={handleCreate}>
+              <Button variant="primary" disabled={isSaving} onClick={handleCreate}>
                 {isSaving ? "Creating…" : "Create Table"}
               </Button>
             </div>

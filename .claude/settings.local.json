@@ -44,7 +44,8 @@
       "Bash(xargs wc -l)",
       "Bash(echo \"exit:$?\")",
       "Bash(npm install *)",
-      "Bash(npx jest *)"
+      "Bash(npx jest *)",
+      "PowerShell(npx tsc --noEmit 2>&1 | Select-Object -First 50)"
     ]
   }
 }
