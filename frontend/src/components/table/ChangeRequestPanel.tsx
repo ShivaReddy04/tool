@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../context/AuthContext';
-import { Card, Button, Badge, EmptyState } from '../common';
+import { Card, Button, EmptyState } from '../common';
 import { fetchChangeRequests, approveChangeRequest, rejectChangeRequest, ChangeRequest } from '../../api/changeRequests';
 import { useDashboard } from '../../context/DashboardContext';
 

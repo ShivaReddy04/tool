@@ -11,8 +11,6 @@ import { buildCreateTableDDL, buildAlterDDL, hasPendingChanges, DbType, DDLColum
 import { HttpError } from '../utils/httpError';
 import type { SubmitForReviewInput, ReviewSubmissionInput } from '../schemas/submission';
 
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
 // Builds the same statement list that the apply step will run at approval
 // time. Shared by submit-time pre-flight and the approval handler so both
 // agree on exactly what DDL is being validated / executed.

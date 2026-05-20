@@ -16,7 +16,6 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
-  const [accessToken, setAccessToken] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
   const isAuthenticated = user !== null;
@@ -27,7 +26,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const restoreSession = async () => {
       try {
         const { data } = await api.post("/auth/refresh-token");
-        setAccessToken(data.accessToken);
         // Fetch user profile with new token
         const profile = await api.get("/auth/profile", {
           headers: { Authorization: `Bearer ${data.accessToken}` },
@@ -44,7 +42,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       } catch {
         // No valid session — user needs to log in
         setUser(null);
-        setAccessToken(null);
       } finally {
         setIsLoading(false);
       }
@@ -64,7 +61,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     async (email: string, password: string): Promise<string | null> => {
       try {
         const { data } = await api.post("/auth/login", { email, password });
-        setAccessToken(data.accessToken);
         const userObj = {
           id: data.user.id,
           name: `${data.user.firstName} ${data.user.lastName}`,
@@ -92,7 +88,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           lastName,
           role,
         });
-        setAccessToken(data.accessToken);
         const userObj = {
           id: data.user.id,
           name: `${data.user.firstName} ${data.user.lastName}`,
@@ -117,7 +112,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       // Logout even if API call fails
     }
     setUser(null);
-    setAccessToken(null);
     // Drop the auth blob so the API client stops sending the previous user's
     // bearer token, and the next signed-in user doesn't start with a stale
     // session. Per-user dashboard state is namespaced by user.id in
