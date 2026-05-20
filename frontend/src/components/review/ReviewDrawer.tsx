@@ -2,7 +2,7 @@ import React, { useState } from "react";
 import { useAuth } from "../../context/AuthContext";
 import { useDashboard } from "../../context/DashboardContext";
 import { Drawer, Button, Badge } from "../common";
-import type { ColumnAction, ColumnDefinition } from "../../types";
+import type { ColumnAction, ColumnDefinition, PreviousColumnSnapshot } from "../../types";
 import { COLUMN_FIELDS, type ColumnFieldSpec } from "../columns/columnFields";
 
 const renderReviewCell = (field: ColumnFieldSpec, col: ColumnDefinition): React.ReactNode => {
@@ -40,32 +40,140 @@ const actionBadgeVariant: Record<ColumnAction, "neutral" | "info" | "success" | 
   Drop: "danger",
 };
 
-const DiffViewer: React.FC<{ tableDef: any; cols: any[] }> = ({ tableDef, cols }) => {
-  const fullName = tableDef.tableName;
+// information_schema returns is_nullable as "YES" / "NO"; DART's column_definitions
+// stores a boolean. Normalize both to boolean for comparison.
+const toBoolNullable = (v: unknown): boolean => {
+  if (typeof v === "boolean") return v;
+  if (typeof v === "string") return v.toUpperCase() === "YES";
+  return true;
+};
+
+interface FieldDiff {
+  field: string;
+  oldValue: string;
+  newValue: string;
+}
+
+// DDL-affecting fields only — these are what the architect's approval actually
+// pushes to the target cluster, and they're the fields connector.getColumns()
+// returns. Other DART metadata (data_classification, attribute_definition,
+// etc.) changes aren't diffed here because we have no prior snapshot of them.
+const computeFieldDiffs = (
+  prev: PreviousColumnSnapshot | undefined,
+  col: ColumnDefinition,
+): FieldDiff[] => {
+  if (!prev) return [];
+  const diffs: FieldDiff[] = [];
+
+  if ((prev.data_type || "").toLowerCase() !== (col.dataType || "").toLowerCase()) {
+    diffs.push({ field: "Data Type", oldValue: prev.data_type || "—", newValue: col.dataType || "—" });
+  }
+
+  const prevNullable = toBoolNullable(prev.is_nullable);
+  if (prevNullable !== col.isNullable) {
+    diffs.push({ field: "Nullable", oldValue: prevNullable ? "YES" : "NO", newValue: col.isNullable ? "YES" : "NO" });
+  }
+
+  const prevDefault = (prev.column_default || "").trim();
+  const newDefault = (col.defaultValue || "").trim();
+  if (prevDefault !== newDefault) {
+    diffs.push({ field: "Default", oldValue: prevDefault || "—", newValue: newDefault || "—" });
+  }
+
+  return diffs;
+};
+
+const FieldChangeRow: React.FC<{ diff: FieldDiff }> = ({ diff }) => (
+  <div className="flex items-center gap-2 text-xs">
+    <span className="font-medium text-slate-600 min-w-[88px]">{diff.field}:</span>
+    <span className="line-through text-red-600 font-mono">{diff.oldValue}</span>
+    <span className="text-slate-400">→</span>
+    <span className="text-emerald-700 font-mono font-semibold">{diff.newValue}</span>
+  </div>
+);
+
+const FieldChangesSection: React.FC<{
+  cols: ColumnDefinition[];
+  previousColumns: PreviousColumnSnapshot[];
+}> = ({ cols, previousColumns }) => {
+  const prevByName = new Map(previousColumns.map((p) => [p.column_name.toLowerCase(), p]));
+  const changes = cols.filter((c) => c.action !== "No Change");
+
+  if (changes.length === 0) {
+    return (
+      <p className="text-xs text-slate-400 italic px-3 py-2 bg-slate-50 rounded border border-slate-200">
+        No column changes in this submission — all columns are unchanged.
+      </p>
+    );
+  }
 
   return (
-    <div className="bg-[#1e1e1e] text-[#d4d4d4] p-4 rounded-xl font-mono text-sm overflow-x-auto shadow-inner border border-slate-700 font-medium">
-      <div className="mb-2 text-indigo-400">-- DDL Operations for <span className="font-bold">{fullName}</span></div>
-      {cols.map(col => {
-        const notNull = col.isNullable === false ? " NOT NULL" : "";
-        const pk = col.isPrimaryKey ? " PRIMARY KEY" : "";
-        const def = col.defaultValue ? ` DEFAULT ${col.defaultValue}` : "";
-        const fullDef = `${col.columnName} ${col.dataType}${notNull}${pk}${def}`;
+    <div className="space-y-2">
+      {changes.map((col) => {
+        const prev = prevByName.get(col.columnName.toLowerCase());
 
-        if (col.action === 'Add') {
-          return <div key={col.id} className="bg-emerald-900/40 text-emerald-300 py-1 px-2 -mx-2"><span className="select-none inline-block w-5 font-bold">+</span> ADD COLUMN {fullDef};</div>;
-        } else if (col.action === 'Drop') {
-          return <div key={col.id} className="bg-red-900/40 text-red-300 py-1 px-2 -mx-2"><span className="select-none inline-block w-5 font-bold">-</span> DROP COLUMN {col.columnName};</div>;
-        } else if (col.action === 'Modify') {
+        if (col.action === "Add") {
           return (
-            <div key={col.id}>
-              <div className="bg-red-900/40 text-red-300 py-1 px-2 -mx-2"><span className="select-none inline-block w-5 font-bold">-</span> /* Old definition replaced */</div>
-              <div className="bg-emerald-900/40 text-emerald-300 py-1 px-2 -mx-2"><span className="select-none inline-block w-5 font-bold">+</span> ALTER COLUMN {fullDef};</div>
+            <div key={col.id} className="border-l-4 border-emerald-400 bg-emerald-50 px-3 py-2 rounded">
+              <div className="text-xs font-semibold text-emerald-700 mb-1 flex items-center gap-2">
+                <Badge variant="success">Added</Badge>
+                <span className="font-mono">{col.columnName}</span>
+              </div>
+              <div className="text-xs text-slate-700 font-mono ml-1">
+                {col.dataType}
+                {!col.isNullable && " NOT NULL"}
+                {col.isPrimaryKey && " PRIMARY KEY"}
+                {col.defaultValue && ` DEFAULT ${col.defaultValue}`}
+              </div>
             </div>
           );
-        } else {
-          return <div key={col.id} className="text-slate-500 py-1 px-2 -mx-2"><span className="select-none inline-block w-5">&nbsp;</span> {fullDef},</div>;
         }
+
+        if (col.action === "Drop") {
+          return (
+            <div key={col.id} className="border-l-4 border-red-400 bg-red-50 px-3 py-2 rounded">
+              <div className="text-xs font-semibold text-red-700 mb-1 flex items-center gap-2">
+                <Badge variant="danger">Dropped</Badge>
+                <span className="font-mono">{col.columnName}</span>
+              </div>
+              {prev ? (
+                <div className="text-xs text-slate-700 font-mono line-through ml-1">
+                  was {prev.data_type}
+                  {prev.is_nullable === "NO" && " NOT NULL"}
+                  {prev.column_default && ` DEFAULT ${prev.column_default}`}
+                </div>
+              ) : (
+                <div className="text-xs text-slate-400 italic ml-1">no prior cluster state captured</div>
+              )}
+            </div>
+          );
+        }
+
+        // Modify
+        const diffs = computeFieldDiffs(prev, col);
+        return (
+          <div key={col.id} className="border-l-4 border-amber-400 bg-amber-50 px-3 py-2 rounded">
+            <div className="text-xs font-semibold text-amber-700 mb-1.5 flex items-center gap-2">
+              <Badge variant="info">Modified</Badge>
+              <span className="font-mono">{col.columnName}</span>
+            </div>
+            {!prev ? (
+              <div className="text-xs text-slate-400 italic ml-1">
+                no prior cluster state — column may be new on the target
+              </div>
+            ) : diffs.length === 0 ? (
+              <div className="text-xs text-slate-500 italic ml-1">
+                marked Modify but no DDL-affecting field differs from the cluster
+              </div>
+            ) : (
+              <div className="space-y-0.5 ml-1">
+                {diffs.map((d) => (
+                  <FieldChangeRow key={d.field} diff={d} />
+                ))}
+              </div>
+            )}
+          </div>
+        );
       })}
     </div>
   );
@@ -111,6 +219,7 @@ export const ReviewDrawer: React.FC = () => {
 
   const tableDef = reviewingNotification?.tableDefinition;
   const cols = reviewingNotification?.columns ?? [];
+  const previousColumns = reviewingNotification?.previousColumns ?? [];
 
   return (
     <Drawer
@@ -231,15 +340,16 @@ export const ReviewDrawer: React.FC = () => {
             </div>
           </div>
 
-          {/* Diff Viewer Grid */}
+          {/* Field-Level Changes — side-by-side OLD → NEW per modified column,
+              built from the live-cluster snapshot captured at submit time. */}
           <div>
             <h4 className="text-sm font-semibold text-slate-700 mb-3 flex items-center gap-2">
               <svg className="w-4 h-4 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
               </svg>
-              Computed SQL Diff
+              Field-Level Changes
             </h4>
-            <DiffViewer tableDef={tableDef} cols={cols} />
+            <FieldChangesSection cols={cols} previousColumns={previousColumns} />
           </div>
 
 

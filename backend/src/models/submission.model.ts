@@ -3,6 +3,16 @@ import { query } from '../config/db';
 export interface SubmissionPayload {
     table: any;
     columns: any[];
+    // Live cluster snapshot captured at submit time so the architect can see
+    // OLD → NEW for each Modified / Dropped column. Empty for brand-new tables
+    // (nothing on the target cluster yet) or when the cluster was unreachable
+    // — the architect UI degrades gracefully and shows only NEW values.
+    previousColumns?: Array<{
+        column_name: string;
+        data_type: string;
+        is_nullable: string;
+        column_default: string | null;
+    }>;
 }
 
 export interface Submission {

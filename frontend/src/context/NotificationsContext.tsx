@@ -56,6 +56,7 @@ function pendingSubmissionToNotification(s: any): Notification {
   const p = s.payload || {};
   const tablePayload = p.table || {};
   const columnsPayload: any[] = Array.isArray(p.columns) ? p.columns : [];
+  const previousColumns: any[] = Array.isArray(p.previousColumns) ? p.previousColumns : [];
 
   const tableDefinition: TableDefinition = {
     id: tablePayload.id,
@@ -86,6 +87,7 @@ function pendingSubmissionToNotification(s: any): Notification {
     submissionId: s.id,
     tableDefinition,
     columns,
+    previousColumns,
   };
 }
 

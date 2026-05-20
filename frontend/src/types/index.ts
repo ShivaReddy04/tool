@@ -155,6 +155,16 @@ export interface Notification {
   submissionId?: string;
   tableDefinition?: TableDefinition;
   columns?: ColumnDefinition[];
+  /** Live cluster snapshot captured at submit time, for OLD → NEW diff. */
+  previousColumns?: PreviousColumnSnapshot[];
+}
+
+export interface PreviousColumnSnapshot {
+  column_name: string;
+  data_type: string;
+  /** information_schema convention: "YES" / "NO". */
+  is_nullable: string;
+  column_default: string | null;
 }
 
 export type StepStatus = "completed" | "active" | "pending";

@@ -143,9 +143,23 @@ export const submitTableForReview = async (req: Request, res: Response): Promise
     }
   }
 
+  // Capture the live cluster state for the architect's OLD → NEW diff view.
+  // Empty array for brand-new tables (nothing exists on the cluster yet) or
+  // when the cluster is unreachable — non-fatal; the UI shows NEW only.
+  let previousColumns: SubmissionPayload['previousColumns'] = [];
+  try {
+    previousColumns = await connector.getColumns(
+      connInfo.config,
+      tableSnapshot.schema_name,
+      tableSnapshot.table_name,
+    );
+  } catch (e: any) {
+    console.warn('[submission] getColumns failed; previousColumns will be empty:', e?.message || e);
+  }
+
   await updateTableStatus(tableDefinitionId, 'submitted');
 
-  const payload: SubmissionPayload = { table: tableSnapshot, columns: columnsSnapshot };
+  const payload: SubmissionPayload = { table: tableSnapshot, columns: columnsSnapshot, previousColumns };
   const submission = await createSubmission(tableDefinitionId, submittedBy, assignedArchitectId, payload);
 
   await createAuditLog({
