@@ -3,9 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { useDashboard } from "../context/DashboardContext";
 import { useAuth } from "../context/AuthContext";
 import { TopBar, FooterStatusBar } from "../components/layout";
-import { Button, TextInput, Select, ArchitectSelector, Card, ToastContainer } from "../components/common";
-import type { Architect } from "../api/architects";
-import { formatArchitectName } from "../api/architects";
+import { Button, TextInput, Select, Card, ToastContainer } from "../components/common";
 import {
   generateEntityLogicalName,
   generateTableName,
@@ -73,7 +71,6 @@ export const CreateTablePage: React.FC = () => {
   const navigate = useNavigate();
   const {
     createTable,
-    submitForReview,
     selectedSchemaId,
     selectedBusinessArea,
     toasts,
@@ -89,7 +86,6 @@ export const CreateTablePage: React.FC = () => {
   const [showErrors, setShowErrors] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
-  const [selectedArchitect, setSelectedArchitect] = useState<Architect | null>(null);
 
   useEffect(() => {
     if (!schemaNameTouched) {
@@ -206,7 +202,6 @@ export const CreateTablePage: React.FC = () => {
     tableNameValidation.valid &&
     !!formData.entityLogicalName.trim() &&
     schemaValidation.valid &&
-    !!selectedArchitect &&
     namedColumns.length > 0 &&
     duplicateColumnNames.size === 0 &&
     defaultErrors.size === 0;
@@ -229,10 +224,6 @@ export const CreateTablePage: React.FC = () => {
     }
     if (!schemaValidation.valid) {
       setSubmitError(schemaValidation.error || "Invalid schema name");
-      return;
-    }
-    if (!selectedArchitect) {
-      setSubmitError("Select an architect to review this table");
       return;
     }
     if (!user?.id) {
@@ -265,16 +256,9 @@ export const CreateTablePage: React.FC = () => {
       });
       if (!tableId) return;
 
-      const ok = await submitForReview(
-        user.id,
-        selectedArchitect.id,
-        user.name,
-        tableId
-      );
-      if (!ok) return;
-
       // Return to the dashboard; the newly-created table is now selected
-      // in context so the dashboard will render the edit view for it.
+      // in context so the dashboard renders the edit view for it and the
+      // Submit for Approval bar is enabled (status = draft).
       navigate("/dashboard");
     } finally {
       setIsSaving(false);
@@ -304,7 +288,8 @@ export const CreateTablePage: React.FC = () => {
               <div>
                 <h1 className="text-base font-semibold text-slate-800">Create New Table</h1>
                 <p className="text-xs text-slate-500">
-                  Define table metadata and submit for architect review.
+                  Define table metadata. The table is saved as a draft — submit
+                  for architect review from the dashboard.
                 </p>
               </div>
             </div>
@@ -313,7 +298,7 @@ export const CreateTablePage: React.FC = () => {
                 Cancel
               </Button>
               <Button variant="primary" disabled={!isValid || isSaving} onClick={handleCreate}>
-                {isSaving ? "Submitting…" : "Submit for Review"}
+                {isSaving ? "Creating…" : "Create Table"}
               </Button>
             </div>
           </div>
@@ -414,32 +399,6 @@ export const CreateTablePage: React.FC = () => {
                   </div>
                 )}
               </div>
-            </Card>
-
-            <Card title="Architect Review">
-              <p className="text-xs text-slate-500 mb-3">
-                Submitting routes this table to the chosen architect. The table is
-                saved as a draft now; the physical schema is created in the target
-                cluster only after the architect approves.
-              </p>
-              <ArchitectSelector
-                label="Assign to Architect"
-                value={selectedArchitect}
-                onChange={(a) => setSelectedArchitect(a)}
-                required
-                placeholder="Search architects by name or email…"
-                error={
-                  showErrors && !selectedArchitect
-                    ? "Architect assignment is required"
-                    : undefined
-                }
-              />
-              {selectedArchitect && (
-                <p className="mt-1 text-[11px] text-slate-500">
-                  On submit, {formatArchitectName(selectedArchitect)} will see this in their
-                  review queue.
-                </p>
-              )}
             </Card>
 
             <Card
