@@ -93,7 +93,11 @@ async function pgConnect(config: ConnectionConfig): Promise<PgPool> {
     password: config.password,
     max: 5,
     idleTimeoutMillis: 30_000,
-    connectionTimeoutMillis: 5000,
+    // Cold-start-friendly: serverless Postgres providers (Neon, Supabase
+    // pgbouncer, etc.) pause idle branches and take several seconds to wake
+    // on the first request. 5s was tripping before Neon answered. 15s
+    // leaves slack for the wake-up without hanging the request indefinitely.
+    connectionTimeoutMillis: 15_000,
     ssl: {
       rejectUnauthorized: false,
     },

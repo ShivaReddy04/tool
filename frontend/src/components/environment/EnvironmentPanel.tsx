@@ -166,8 +166,16 @@ export const EnvironmentPanel: React.FC = () => {
         if (selectedDatabase && !data.includes(selectedDatabase)) {
           setDatabase("");
         }
-      } catch {
+      } catch (err: any) {
+        console.error("[env] fetchDatabases failed", err);
         setDatabases([]);
+        const backendMsg = err?.response?.data?.error || err?.message;
+        addToast(
+          "error",
+          backendMsg
+            ? `Couldn't load databases: ${backendMsg}`
+            : "Couldn't load databases. Check the connection credentials and that the host is reachable.",
+        );
       }
       setLoadingDatabases(false);
     };
@@ -210,8 +218,16 @@ export const EnvironmentPanel: React.FC = () => {
           setSchemaName("");
         }
         setCurrentStep(1);
-      } catch {
+      } catch (err: any) {
+        console.error("[env] fetchSchemas failed", err);
         setSchemas([]);
+        const backendMsg = err?.response?.data?.error || err?.message;
+        addToast(
+          "error",
+          backendMsg
+            ? `Couldn't load schemas: ${backendMsg}`
+            : "Couldn't load schemas. The role may lack USAGE on information_schema, or the connection timed out.",
+        );
       }
       setLoadingSchemas(false);
     };
@@ -288,9 +304,17 @@ export const EnvironmentPanel: React.FC = () => {
         }
 
         setCurrentStep(2);
-      } catch {
+      } catch (err: any) {
+        console.error("[env] fetchTables failed", err);
         setTables([]);
         setTableCount(0);
+        const backendMsg = err?.response?.data?.error || err?.message;
+        addToast(
+          "error",
+          backendMsg
+            ? `Couldn't load tables: ${backendMsg}`
+            : "Couldn't load tables for this schema.",
+        );
       }
       setLoadingTables(false);
     };
