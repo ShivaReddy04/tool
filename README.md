@@ -18,6 +18,44 @@ Request flow: React page → `useDashboard()` action → `api/*.ts` (Axios wrapp
 
 **Approval lifecycle:** developer drafts → submits with assigned architect → architect approves → backend builds DDL through `utils/ddl_generator.ts` and applies it via `services/connector.ts` → status moves to `applied`. Each column carries an `action` flag (`Add`/`Modify`/`Drop`/`No Change`) that drives ALTER vs CREATE behavior.
 
+### Where data lives at each stage
+
+Until the architect approves, **the target cluster is never touched**. Drafts and submissions live only in DART's own Postgres.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Dev as Developer
+    participant API as DART API
+    participant DartDB as DART Postgres<br/>(internal)
+    actor Arch as Architect
+    participant Target as Target cluster<br/>(PG / MySQL / MSSQL / Redshift)
+
+    Dev->>API: POST /table-definitions<br/>(table + columns)
+    API->>DartDB: INSERT table_definitions (status='draft')<br/>INSERT column_definitions
+    API-->>Dev: tableId
+
+    Dev->>API: POST /submissions<br/>(tableId, assignedArchitectId)
+    API->>DartDB: INSERT submissions<br/>(status='pending', payload=JSONB snapshot)<br/>UPDATE table_definitions SET status='submitted'
+    API-->>Dev: ok
+    Note over Target: Target cluster NOT modified yet
+
+    alt Architect approves
+        Arch->>API: POST /submissions/:id/review<br/>(status='approved')
+        API->>DartDB: read submissions.payload
+        API->>API: ddl_generator → CREATE / ALTER SQL
+        API->>Target: connector.runDDLBatch(...)
+        Target-->>API: ok
+        API->>DartDB: UPDATE submissions SET status='approved'<br/>UPDATE table_definitions SET status='applied'
+    else Architect rejects
+        Arch->>API: POST /submissions/:id/review<br/>(status='rejected', rejection_reason)
+        API->>DartDB: UPDATE submissions SET status='rejected'<br/>UPDATE table_definitions SET status='rejected'
+        Note over Target: Target cluster still untouched —<br/>developer can fix and resubmit
+    end
+```
+
+Tables involved on the DART side: `table_definitions`, `column_definitions`, and `submissions` (with the `payload` JSONB snapshot added in migration 5 so the architect always reviews exactly what was submitted, even if the developer edits the draft afterwards).
+
 Key folders:
 
 - `backend/src/{routes,controllers,models,middleware,services,utils}` — standard layered API
