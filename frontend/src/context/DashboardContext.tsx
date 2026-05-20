@@ -755,14 +755,21 @@ const DashboardCoreProvider: React.FC<{ children: React.ReactNode }> = ({ childr
           updatedAt: t.updated_at,
           status: t.status,
         }));
+        // Strict picker rule (see EnvironmentPanel for the full explanation):
+        // the picker is driven by what's physically on the cluster. DART rows
+        // never get added as new entries here; they only enrich existing rows
+        // by name so the per-table status badge can render. If a DART row has
+        // no matching physical entry (table dropped externally, or never
+        // applied yet), it is intentionally dropped from the picker.
         setTables((prev) => {
-          const physicalOnly = prev.filter((p) => p.id.includes("::"));
-          const merged = [...mappedSummary];
-          const dartNames = new Set(mappedSummary.map((m: any) => m.name));
-          for (const p of physicalOnly) {
-            if (!dartNames.has(p.name)) merged.push(p);
-          }
-          return merged;
+          const dartByName = new Map<string, TableSummary>(
+            mappedSummary.map((m: TableSummary) => [m.name, m]),
+          );
+          return prev.map((p) => {
+            const dart = dartByName.get(p.name);
+            if (!dart) return p;
+            return { ...p, id: dart.id, status: dart.status };
+          });
         });
       })
       .catch((err) => {
@@ -844,7 +851,19 @@ const DashboardCoreProvider: React.FC<{ children: React.ReactNode }> = ({ childr
               })
               .catch((err2) => {
                 console.error("Failed to load physical columns:", err2);
-                addToast("error", "Failed to fetch table columns from database.");
+                // Both the DART by-key lookup AND the live cluster columns
+                // call failed — the table almost certainly no longer exists
+                // on the cluster (dropped externally). Clear the stale
+                // selection so the right panel returns to its empty state.
+                setSelectedTableId("");
+                setTableDefinition(null);
+                setColumns([]);
+                setSubmissionStatus("draft");
+                setHasUnsavedChanges(false);
+                addToast(
+                  "error",
+                  `Table "${tableName}" no longer exists in the database.`,
+                );
               });
           });
       } else {

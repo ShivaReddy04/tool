@@ -31,8 +31,18 @@ export const testConnection = async (conn: {
   return data;
 };
 
-export const deleteConnection = async (id: string): Promise<void> => {
-  await api.delete(`/clusters/${id}`);
+export interface DeleteConnectionReferences {
+  warnings: string[];
+  references: { tableDefinitions: number; changeRequests: number };
+}
+
+/**
+ * Delete a connection. Without `force`, the backend returns 409 if related
+ * table definitions / change requests exist; the thrown error then carries
+ * a `references` payload so the UI can re-confirm with the counts.
+ */
+export const deleteConnection = async (id: string, force = false): Promise<void> => {
+  await api.delete(`/clusters/${id}${force ? '?force=true' : ''}`);
 };
 
 export const fetchDatabases = async (connectionId: string): Promise<string[]> => {

@@ -138,6 +138,30 @@ export const deleteCluster = async (id: string): Promise<boolean> => {
   return result.rowCount !== null && result.rowCount > 0;
 };
 
+/**
+ * Count rows that would be cascade-deleted alongside this connection. The
+ * FK chain (table_definitions → column_definitions / submissions; plus
+ * change_requests) means a one-line DELETE here can wipe a substantial slice
+ * of the user's work, so we surface the counts pre-flight and require an
+ * explicit `?force=true` to proceed.
+ */
+export const getClusterReferences = async (
+  id: string,
+): Promise<{ tableDefinitions: number; changeRequests: number }> => {
+  const tablesRes = await query(
+    'SELECT COUNT(*)::int AS count FROM table_definitions WHERE connection_id = $1',
+    [id],
+  );
+  const crRes = await query(
+    'SELECT COUNT(*)::int AS count FROM change_requests WHERE connection_id = $1',
+    [id],
+  );
+  return {
+    tableDefinitions: Number(tablesRes.rows[0]?.count) || 0,
+    changeRequests: Number(crRes.rows[0]?.count) || 0,
+  };
+};
+
 /** Returns decrypted connection config for use with the DB connector */
 export const getClusterConnectionConfig = async (id: string) => {
   const cluster = await getClusterById(id);

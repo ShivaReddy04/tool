@@ -6,8 +6,10 @@ import {
   updateCluster,
   deleteCluster,
   getClusterConnectionConfig,
+  getClusterReferences,
 } from '../models/cluster.model';
-import { getConnector } from '../services/connector';
+import { getConnector, evictPgPool } from '../services/connector';
+import { createAuditLog } from '../models/audit_log.model';
 import { DATA_TYPES } from '../utils/dataTypes';
 import { HttpError } from '../utils/httpError';
 import type { CreateClusterInput, UpdateClusterInput, TestConnectionInput } from '../schemas/cluster';
@@ -59,9 +61,81 @@ export const update = async (req: Request, res: Response): Promise<void> => {
 };
 
 export const remove = async (req: Request, res: Response): Promise<void> => {
-  const deleted = await deleteCluster((req.params.id as string));
-  if (!deleted) throw new HttpError(404, 'Cluster not found');
-  res.json({ message: 'Cluster deleted' });
+  const id = req.params.id as string;
+  const force = String(req.query.force || 'false') === 'true';
+
+  // Load the cluster (and its decrypted config) BEFORE deleting — we need the
+  // pg-pool-key tuple to evict the warm pool, and we want a 404 to fire when
+  // the row isn't there rather than after the cascade has run.
+  const connConfig = await getClusterConnectionConfig(id);
+  if (!connConfig) throw new HttpError(404, 'Cluster not found');
+
+  // Pre-flight: count related rows that will be cascade-wiped (table
+  // definitions, columns, submissions, change requests) and refuse unless the
+  // caller acknowledges with ?force=true. Returns the counts so the UI can
+  // show a meaningful second confirmation.
+  if (!force) {
+    const refs = await getClusterReferences(id);
+    if (refs.tableDefinitions > 0 || refs.changeRequests > 0) {
+      const warnings: string[] = [];
+      if (refs.tableDefinitions > 0) {
+        warnings.push(
+          `This connection has ${refs.tableDefinitions} table definition${
+            refs.tableDefinitions === 1 ? '' : 's'
+          } (and any associated columns and submissions) that will be permanently deleted.`,
+        );
+      }
+      if (refs.changeRequests > 0) {
+        warnings.push(
+          `${refs.changeRequests} pending change request${
+            refs.changeRequests === 1 ? '' : 's'
+          } will also be deleted.`,
+        );
+      }
+      throw new HttpError(409, 'Connection has related entities', {
+        warnings,
+        references: refs,
+      });
+    }
+  }
+
+  const deleted = await deleteCluster(id);
+  if (!deleted) {
+    // Race: someone else deleted it between our SELECT and DELETE. Treat as
+    // success-by-idempotency rather than 404 — the caller's intent (have it
+    // gone) is satisfied.
+    res.json({ message: 'Cluster already deleted', id });
+    return;
+  }
+
+  // Pool eviction is best-effort. A failed close must not surface as a 500
+  // because the row is already gone — log and continue.
+  try {
+    await evictPgPool(connConfig.config);
+  } catch (err: any) {
+    console.warn('[cluster] pool eviction failed (non-fatal)', err?.message || err);
+  }
+
+  // Audit log is best-effort for the same reason.
+  try {
+    await createAuditLog({
+      action: 'DELETE_CONNECTION',
+      entity_type: 'connection',
+      entity_id: id,
+      user_id: req.user?.userId,
+      user_name: req.user?.email || req.user?.userId || 'unknown',
+      metadata: {
+        connection_name: connConfig.cluster.name,
+        db_type: connConfig.cluster.db_type,
+        host: connConfig.cluster.host,
+        forced: force,
+      },
+    });
+  } catch (auditErr) {
+    console.warn('[cluster] delete audit log failed (non-fatal)', auditErr);
+  }
+
+  res.json({ message: 'Connection deleted', id });
 };
 
 // Connection tests intentionally return `{ success, message }` with a 200 even

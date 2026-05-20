@@ -112,6 +112,24 @@ export async function _clearPgPoolCache(): Promise<void> {
   await Promise.all(entries.map((e) => e.pool.end().catch(() => undefined)));
 }
 
+/**
+ * Drain and drop the cached pg pool for a specific connection tuple. Called
+ * after a cluster row is deleted so the FD is released immediately instead of
+ * waiting for the lazy idle-TTL sweep. Safe to call when no pool is cached
+ * (e.g. the connection had never been used) — it's a no-op.
+ */
+export async function evictPgPool(config: ConnectionConfig): Promise<void> {
+  const key = pgPoolKey(config);
+  const entry = pgPoolCache.get(key);
+  if (!entry) return;
+  pgPoolCache.delete(key);
+  // Closing a freshly-evicted pool must never block the caller — surface as a
+  // warning, never a failure.
+  await entry.pool.end().catch((err) =>
+    console.warn('Evicted pg pool close failed:', err?.message || err),
+  );
+}
+
 async function pgGetDatabases(config: ConnectionConfig): Promise<string[]> {
   const pool = await pgConnect(config);
   const res = await pool.query(
