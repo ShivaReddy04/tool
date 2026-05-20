@@ -1,4 +1,8 @@
 import type { ColumnDefinition, DataClassification } from "../../types";
+import {
+  generateTableName,
+  generateEntityLogicalName,
+} from "../../utils/abbreviations";
 
 export type CellKind = "text" | "number" | "select" | "checkbox";
 
@@ -56,7 +60,20 @@ export const COLUMN_FIELDS: ColumnFieldSpec[] = [
     width: 170,
     kind: "text",
     get: (c) => c.attributeName ?? "",
-    set: (c, v) => ({ ...c, attributeName: String(v) }),
+    // Editing the attribute (human-readable) re-derives the physical column
+    // name through the same abbreviation dictionary used for table metadata
+    // (Table Name ↔ Entity Logical Name). This is bidirectional: changing
+    // columnName below regenerates attributeName in the same way. Both
+    // directions overwrite — they're aliases of the same conceptual field
+    // and we don't want the two to drift silently.
+    set: (c, v) => {
+      const attr = String(v);
+      return {
+        ...c,
+        attributeName: attr,
+        columnName: generateTableName(attr),
+      };
+    },
   },
   {
     key: "columnName",
@@ -65,7 +82,14 @@ export const COLUMN_FIELDS: ColumnFieldSpec[] = [
     kind: "text",
     required: true,
     get: (c) => c.columnName,
-    set: (c, v) => ({ ...c, columnName: String(v) }),
+    set: (c, v) => {
+      const col = String(v);
+      return {
+        ...c,
+        columnName: col,
+        attributeName: generateEntityLogicalName(col),
+      };
+    },
   },
   {
     key: "action",
