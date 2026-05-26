@@ -124,21 +124,25 @@ export const NotificationsProvider: React.FC<NotificationsProviderProps> = ({
   }, []);
 
   // Pull pending submissions and merge as architect-targeted notifications.
-  // The server is the sole source of truth for submission notifications: any
-  // local notif with a submissionId is dropped so the bell can't show both a
-  // local mirror and the server-side "srv-submission-…" for the same one.
+  // MERGE (don't replace) the server-sourced slice: once a submission notif
+  // has been delivered to the bell, it persists locally until the architect
+  // explicitly removes it via deleteNotification (which records the id in
+  // dismissedSubmissionIds so subsequent refreshes don't resurrect it).
+  // This means a notification stays visible after approve/reject — marked
+  // as read — instead of vanishing the moment the backend drops it from
+  // the pending list. Wiping reviewed notifications surprised architects
+  // who expected the bell to be a durable inbox, not a live queue mirror.
   const refreshPendingSubmissions = useCallback(async () => {
     try {
       const res = await api.get("/submissions/pending");
       const dismissed = new Set(dismissedSubmissionIds);
-      const serverNotifs: Notification[] = (res.data || [])
+      const incoming: Notification[] = (res.data || [])
         .map(pendingSubmissionToNotification)
         .filter((n: Notification) => !n.submissionId || !dismissed.has(n.submissionId));
       setNotifications((prev) => {
-        const localOnly = prev.filter(
-          (n) => !n.id.startsWith("srv-submission-") && !(n.type === "submission" && n.submissionId),
-        );
-        return [...serverNotifs, ...localOnly];
+        const existingIds = new Set(prev.map((n) => n.id));
+        const newOnes = incoming.filter((n) => !existingIds.has(n.id));
+        return [...newOnes, ...prev];
       });
     } catch (err) {
       console.error("Failed to load pending submissions:", err);
