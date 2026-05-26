@@ -17,9 +17,13 @@ export const TableToolbar: React.FC = () => {
     refreshTable,
   } = useDashboard();
 
-  const pendingCount = tables.filter(
-    (t) => t.status === "draft" || t.status === "submitted" || t.status === "rejected",
-  ).length;
+  // "Awaiting architect approval" maps to exactly one status: a submission
+  // row exists and is still 'pending'. Draft tables were never submitted —
+  // no submission row, so the architect's notification list is empty.
+  // Rejected tables have already been reviewed; the ball is back in the
+  // developer's court. Counting either of those here mismatched the
+  // architect's actual queue and confused users.
+  const pendingCount = tables.filter((t) => t.status === "submitted").length;
 
   // Picking a table keeps you on /dashboard — the edit view renders inline
   // when tableDefinition is populated. No navigation.
