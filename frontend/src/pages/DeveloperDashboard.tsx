@@ -59,7 +59,13 @@ const SubmitForApprovalBar: React.FC = () => {
   if (!tableDefinition) return null;
 
   const isLocked = submissionStatus === "submitted";
-  const submitDisabled = isLocked || firstInvalidDefault !== null;
+  // Only allow submit when there is actually something to review: either the
+  // developer has unsaved edits, or this is a freshly created table that has
+  // never been submitted yet (status still 'draft'). Re-submitting an
+  // already-approved/rejected table with no changes would just churn the
+  // architect's queue with an identical snapshot.
+  const hasSubmittableWork = hasUnsavedChanges || submissionStatus === "draft";
+  const submitDisabled = isLocked || firstInvalidDefault !== null || !hasSubmittableWork;
 
   const handleConfirm = async () => {
     if (!architect || !user) return;
@@ -114,6 +120,8 @@ const SubmitForApprovalBar: React.FC = () => {
                 ? "This table is already pending review."
                 : firstInvalidDefault
                 ? firstInvalidDefault
+                : !hasSubmittableWork
+                ? "Make a change or create a new table to enable submission."
                 : "Save and submit changes for architect approval."
             }
           >
