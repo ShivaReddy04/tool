@@ -13,6 +13,11 @@ export interface SubmissionPayload {
         is_nullable: string;
         column_default: string | null;
     }>;
+    // Exact DDL the approval handler will run against the target cluster —
+    // computed at submit time and rendered in the architect's review drawer so
+    // they see the literal CREATE / ALTER statements before approving.
+    ddlStatements?: string[];
+    dbType?: 'postgresql' | 'redshift' | 'mysql' | 'mssql';
 }
 
 export interface Submission {

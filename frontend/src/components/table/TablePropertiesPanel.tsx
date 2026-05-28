@@ -87,7 +87,12 @@ export const TablePropertiesPanel: React.FC = () => {
   }
 
   const startEdit = () => {
-    setDraft({ ...tableDefinition });
+    // Table Name is stored as a SQL identifier ("Emp_Sls_Fct") but the form
+    // shows spaces. Convert when entering edit mode; saveEdit converts back.
+    setDraft({
+      ...tableDefinition,
+      tableName: tableDefinition.tableName.replace(/_/g, " "),
+    });
     setIsEditing(true);
     setShowErrors(false);
   };
@@ -112,8 +117,13 @@ export const TablePropertiesPanel: React.FC = () => {
     }
 
     setSaving(true);
+    const canonicalTableName = draft.tableName.trim().replace(/\s+/g, "_");
     // Push the draft into the global table definition so saveChanges sees it.
-    setTableDefinition({ ...draft, schemaName: schemaCheck.sanitized });
+    setTableDefinition({
+      ...draft,
+      tableName: canonicalTableName,
+      schemaName: schemaCheck.sanitized,
+    });
     setHasUnsavedChanges(true);
 
     // Defer save by one tick so React applies the state update before
@@ -132,8 +142,12 @@ export const TablePropertiesPanel: React.FC = () => {
     setDraft((prev) => (prev ? { ...prev, ...patch } : prev));
   };
 
+  // Table Name is persisted with underscores ("Emp_Sls_Fct") but rendered with
+  // spaces, matching the create/edit forms.
+  const displayTableName = tableDefinition.tableName.replace(/_/g, " ");
+
   const properties = [
-    { label: "Table Name", value: tableDefinition.tableName },
+    { label: "Table Name", value: displayTableName },
     { label: "Entity Logical Name", value: tableDefinition.entityLogicalName },
     { label: "Schema Name", value: tableDefinition.schemaName },
     { label: "Distribution Style", value: tableDefinition.distributionStyle },
@@ -154,7 +168,7 @@ export const TablePropertiesPanel: React.FC = () => {
   return (
     <Card
       title="Table Properties"
-      subtitle={tableDefinition.tableName}
+      subtitle={displayTableName}
       icon={
         <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
@@ -203,24 +217,26 @@ export const TablePropertiesPanel: React.FC = () => {
           <TextInput
             label="Table Name"
             value={draft.tableName}
-            onChange={(e) =>
+            onChange={(e) => {
+              const displayed = e.target.value.replace(/_/g, " ");
               updateDraft({
-                tableName: e.target.value,
-                entityLogicalName: generateEntityLogicalName(e.target.value),
-              })
-            }
+                tableName: displayed,
+                entityLogicalName: generateEntityLogicalName(displayed),
+              });
+            }}
             required
             error={showErrors && !draft.tableName.trim() ? "Table name is required" : undefined}
           />
           <TextInput
             label="Entity Logical Name"
             value={draft.entityLogicalName}
-            onChange={(e) =>
+            onChange={(e) => {
+              const displayed = e.target.value.replace(/_/g, " ");
               updateDraft({
-                entityLogicalName: e.target.value,
-                tableName: generateTableName(e.target.value),
-              })
-            }
+                entityLogicalName: displayed,
+                tableName: generateTableName(displayed).replace(/_/g, " "),
+              });
+            }}
           />
           <TextInput
             label="Schema Name"

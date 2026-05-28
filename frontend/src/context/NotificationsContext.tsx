@@ -57,6 +57,8 @@ function pendingSubmissionToNotification(s: any): Notification {
   const tablePayload = p.table || {};
   const columnsPayload: any[] = Array.isArray(p.columns) ? p.columns : [];
   const previousColumns: any[] = Array.isArray(p.previousColumns) ? p.previousColumns : [];
+  const ddlStatements: string[] = Array.isArray(p.ddlStatements) ? p.ddlStatements : [];
+  const dbType = p.dbType;
 
   const tableDefinition: TableDefinition = {
     id: tablePayload.id,
@@ -88,6 +90,8 @@ function pendingSubmissionToNotification(s: any): Notification {
     tableDefinition,
     columns,
     previousColumns,
+    ddlStatements,
+    dbType,
   };
 }
 

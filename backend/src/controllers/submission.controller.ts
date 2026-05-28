@@ -120,8 +120,15 @@ export const submitTableForReview = async (req: Request, res: Response): Promise
   const dbType = connInfo.cluster.db_type as DbType;
   const connector = getConnector(dbType);
 
+  // Compute the DDL once and reuse it for: (1) optional dry-run validation,
+  // (2) embedding in the submission payload so the architect's review drawer
+  // can show the literal CREATE/ALTER statements before approval. For dialects
+  // that support dry-run, computation failures still block submission (original
+  // behavior). For MySQL (no dry-run) we treat it as best-effort so a transient
+  // connectivity hiccup doesn't gate the submission.
+  let ddlStatements: string[] = [];
   if (connector.supportsDDLDryRun) {
-    const statements = await computeApplyStatements(
+    ddlStatements = await computeApplyStatements(
       connector,
       dbType,
       connInfo.config,
@@ -129,9 +136,9 @@ export const submitTableForReview = async (req: Request, res: Response): Promise
       tableSnapshot.table_name,
       columnsSnapshot as unknown as DDLColumn[],
     );
-    if (statements.length > 0) {
+    if (ddlStatements.length > 0) {
       try {
-        await connector.dryRunDDLBatch(connInfo.config, statements);
+        await connector.dryRunDDLBatch(connInfo.config, ddlStatements);
       } catch (dryErr: any) {
         throw new HttpError(
           400,
@@ -140,6 +147,19 @@ export const submitTableForReview = async (req: Request, res: Response): Promise
           true,
         );
       }
+    }
+  } else {
+    try {
+      ddlStatements = await computeApplyStatements(
+        connector,
+        dbType,
+        connInfo.config,
+        tableSnapshot.schema_name,
+        tableSnapshot.table_name,
+        columnsSnapshot as unknown as DDLColumn[],
+      );
+    } catch (e: any) {
+      console.warn('[submission] DDL preview computation failed; payload will omit it:', e?.message || e);
     }
   }
 
@@ -159,7 +179,13 @@ export const submitTableForReview = async (req: Request, res: Response): Promise
 
   await updateTableStatus(tableDefinitionId, 'submitted');
 
-  const payload: SubmissionPayload = { table: tableSnapshot, columns: columnsSnapshot, previousColumns };
+  const payload: SubmissionPayload = {
+    table: tableSnapshot,
+    columns: columnsSnapshot,
+    previousColumns,
+    ddlStatements,
+    dbType,
+  };
   const submission = await createSubmission(tableDefinitionId, submittedBy, assignedArchitectId, payload);
 
   await createAuditLog({

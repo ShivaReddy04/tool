@@ -157,6 +157,11 @@ export interface Notification {
   columns?: ColumnDefinition[];
   /** Live cluster snapshot captured at submit time, for OLD → NEW diff. */
   previousColumns?: PreviousColumnSnapshot[];
+  /** Exact CREATE / ALTER statements that approval will execute. Empty for
+   *  unchanged submissions. Surfaced in the architect's review drawer. */
+  ddlStatements?: string[];
+  /** Dialect the DDL was generated for — shown alongside the preview. */
+  dbType?: DbType;
 }
 
 export interface PreviousColumnSnapshot {
