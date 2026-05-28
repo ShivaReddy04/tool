@@ -105,8 +105,11 @@ export const CreateTablePage: React.FC = () => {
     () => validateSchemaName(formData.schemaName),
     [formData.schemaName]
   );
+  // Table Name displays with spaces ("Emp Sls Fct") but gets persisted as a
+  // SQL identifier ("Emp_Sls_Fct"). Collapse the display value to its canonical
+  // form before validating, so `sanitized` is what we send to the backend.
   const tableNameValidation = useMemo(
-    () => validateIdentifier(formData.tableName, "Table name"),
+    () => validateIdentifier(formData.tableName.trim().replace(/\s+/g, "_"), "Table name"),
     [formData.tableName]
   );
 
@@ -153,18 +156,22 @@ export const CreateTablePage: React.FC = () => {
   }, []);
 
   const handleTableNameChange = useCallback((raw: string) => {
+    // Both fields show spaces in the UI — any underscore the user pastes or
+    // types is normalized to a space immediately.
+    const displayed = raw.replace(/_/g, " ");
     setFormData((prev) => ({
       ...prev,
-      tableName: raw,
-      entityLogicalName: generateEntityLogicalName(raw),
+      tableName: displayed,
+      entityLogicalName: generateEntityLogicalName(displayed),
     }));
   }, []);
 
   const handleEntityNameChange = useCallback((raw: string) => {
+    const displayed = raw.replace(/_/g, " ");
     setFormData((prev) => ({
       ...prev,
-      entityLogicalName: raw,
-      tableName: generateTableName(raw),
+      entityLogicalName: displayed,
+      tableName: generateTableName(displayed).replace(/_/g, " "),
     }));
   }, []);
 
@@ -335,7 +342,7 @@ export const CreateTablePage: React.FC = () => {
                       label="Table Name"
                       value={formData.tableName}
                       onChange={(e) => handleTableNameChange(e.target.value)}
-                      placeholder="e.g., Emp_Sls_Fct"
+                      placeholder="e.g., Emp Sls Fct"
                       required
                       error={
                         showErrors && !tableNameValidation.valid

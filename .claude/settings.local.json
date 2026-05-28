@@ -55,7 +55,15 @@
       "Bash(rm frontend/src/utils/naming.ts)",
       "Read(//c/c/Users/panya/Desktop/dart/frontend/src/**)",
       "Bash(npm uninstall *)",
-      "Bash(npm test *)"
+      "Bash(npm test *)",
+      "Bash(Get-ChildItem -Path \"C:\\\\Users\\\\panya\\\\Desktop\\\\dart\\\\frontend\\\\src\" -Recurse -File)",
+      "Bash(Select-Object -ExpandProperty FullName)",
+      "Bash(Sort-Object)",
+      "Bash(Get-ChildItem -Path \"C:\\\\Users\\\\panya\\\\Desktop\\\\dart\" -Recurse -Include \"*.ts\", \"*.js\", \"*.json\" -Exclude \"*node_modules*\", \"*dist*\", \"*build*\")",
+      "Bash(Get-ChildItem -Path \"C:\\\\Users\\\\panya\\\\Desktop\\\\dart\\\\backend\\\\migrations\" -Filter \"*.js\")",
+      "Bash(Select-Object Name)",
+      "Bash(Sort-Object Name)",
+      "Bash(Get-ChildItem -Path \"C:\\\\Users\\\\panya\\\\Desktop\\\\dart\\\\backend\\\\src\\\\controllers\" -Filter \"*.ts\")"
     ]
   }
 }
