@@ -170,7 +170,7 @@ const storageKeyFor = (userId: string | undefined) =>
   userId ? `dart_dashboard_state_${userId}` : `${LEGACY_STORAGE_KEY}_anon`;
 
 /* ── shared column mappers ─────────────────────────────────────────────── */
-function columnFromServer(c: any): ColumnDefinition {
+export function columnFromServer(c: any): ColumnDefinition {
   return {
     id: c.id,
     columnName: c.column_name,
