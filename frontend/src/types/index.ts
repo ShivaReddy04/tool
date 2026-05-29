@@ -142,6 +142,8 @@ export interface SelectOption {
 
 export type SubmissionStatus = "draft" | "submitted" | "approved" | "rejected";
 
+export type NotificationReviewStatus = "pending" | "approved" | "rejected";
+
 export interface Notification {
   id: string;
   type: "submission" | "approval" | "rejection";
@@ -153,6 +155,12 @@ export interface Notification {
   isRead: boolean;
   targetRole: "architect" | "developer";
   submissionId?: string;
+  /** Architect's decision on this submission. 'pending' until the architect
+   *  approves or rejects. Once non-pending, the review surface disables the
+   *  Approve / Reject buttons so the same submission can't be acted on twice. */
+  reviewStatus?: NotificationReviewStatus;
+  /** ISO timestamp captured when reviewStatus transitions away from 'pending'. */
+  reviewedAt?: string;
   tableDefinition?: TableDefinition;
   columns?: ColumnDefinition[];
   /** Live cluster snapshot captured at submit time, for OLD → NEW diff. */

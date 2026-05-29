@@ -152,11 +152,33 @@ export const NotificationsPage: React.FC = () => {
                           <NotificationIcon type={n.type} className={`w-4 h-4 ${meta.color}`} />
                         </div>
                         <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-2 flex-wrap">
                             <span className="text-sm font-medium text-slate-800">{n.title}</span>
                             <span className="text-[10px] uppercase tracking-wide font-semibold text-slate-400">
                               {meta.label}
                             </span>
+                            {n.type === "submission" && (
+                              <span
+                                className={`text-[10px] uppercase tracking-wide font-semibold px-1.5 py-0.5 rounded border ${
+                                  n.reviewStatus === "approved"
+                                    ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                                    : n.reviewStatus === "rejected"
+                                    ? "bg-red-50 text-red-700 border-red-200"
+                                    : "bg-amber-50 text-amber-700 border-amber-200"
+                                }`}
+                                title={
+                                  n.reviewedAt
+                                    ? `Reviewed ${new Date(n.reviewedAt).toLocaleString()}`
+                                    : undefined
+                                }
+                              >
+                                {n.reviewStatus === "approved"
+                                  ? "Approved"
+                                  : n.reviewStatus === "rejected"
+                                  ? "Rejected"
+                                  : "Pending"}
+                              </span>
+                            )}
                             {!n.isRead && (
                               <span className="w-2 h-2 rounded-full bg-indigo-500" />
                             )}
@@ -169,7 +191,12 @@ export const NotificationsPage: React.FC = () => {
                             {n.submittedBy && (
                               <span className="text-xs text-slate-400">From: {n.submittedBy}</span>
                             )}
-                            {clickable && (
+                            {clickable && n.reviewStatus !== "pending" && n.reviewStatus !== undefined && (
+                              <span className="text-xs font-medium text-slate-500">
+                                Click to view (read-only) →
+                              </span>
+                            )}
+                            {clickable && (n.reviewStatus === "pending" || n.reviewStatus === undefined) && (
                               <span className="text-xs font-medium text-indigo-600">
                                 Click to review →
                               </span>

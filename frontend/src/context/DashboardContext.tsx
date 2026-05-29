@@ -257,6 +257,7 @@ const DashboardCoreProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     dismissedSubmissionIds,
     addNotification,
     markNotificationRead,
+    setNotificationReviewStatus,
     markAllNotificationsRead,
     deleteNotification,
     clearAllNotifications,
@@ -505,7 +506,7 @@ const DashboardCoreProvider: React.FC<{ children: React.ReactNode }> = ({ childr
           reviewedBy: architectName,
           status: "approved",
         });
-        markNotificationRead(reviewingNotification.id);
+        setNotificationReviewStatus(reviewingNotification.id, "approved");
         setSubmissionStatus("approved");
 
         addNotification({
@@ -531,7 +532,7 @@ const DashboardCoreProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         addToast("error", formatErrorWithDetails(msg, data?.details));
       }
     },
-    [reviewingNotification, markNotificationRead, addNotification, addToast, refreshPendingSubmissions],
+    [reviewingNotification, setNotificationReviewStatus, addNotification, addToast, refreshPendingSubmissions],
   );
 
   const rejectSubmission = useCallback(
@@ -543,7 +544,7 @@ const DashboardCoreProvider: React.FC<{ children: React.ReactNode }> = ({ childr
           status: "rejected",
           rejectionReason: reason,
         });
-        markNotificationRead(reviewingNotification.id);
+        setNotificationReviewStatus(reviewingNotification.id, "rejected");
         setSubmissionStatus("rejected");
 
         addNotification({
@@ -569,7 +570,7 @@ const DashboardCoreProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         addToast("error", formatErrorWithDetails(msg, data?.details));
       }
     },
-    [reviewingNotification, markNotificationRead, addNotification, addToast, refreshPendingSubmissions],
+    [reviewingNotification, setNotificationReviewStatus, addNotification, addToast, refreshPendingSubmissions],
   );
 
   const reviewCurrentTable = useCallback(

@@ -581,6 +581,16 @@ export const ReviewDrawer: React.FC = () => {
   const submittedAt = reviewingNotification?.timestamp
     ? new Date(reviewingNotification.timestamp).toLocaleString()
     : "—";
+  // Once an architect has approved or rejected this submission once, the
+  // notification carries reviewStatus. Re-opening it should not let the
+  // architect double-action the same submission — the backend would 404 on
+  // the second review call, but disabling here keeps the UI honest and
+  // explains *why* in a banner with the prior decision timestamp.
+  const priorReview = reviewingNotification?.reviewStatus ?? "pending";
+  const isLocked = priorReview === "approved" || priorReview === "rejected";
+  const reviewedAt = reviewingNotification?.reviewedAt
+    ? new Date(reviewingNotification.reviewedAt).toLocaleString()
+    : null;
 
   /* ── render ─────────────────────────────────────────────────────────── */
   return (
@@ -600,14 +610,29 @@ export const ReviewDrawer: React.FC = () => {
           {/* ─── Sticky header ─────────────────────────────────────────── */}
           <header className="flex items-center justify-between gap-4 px-6 py-4 bg-white border-b border-slate-200 shadow-sm shrink-0">
             <div className="min-w-0">
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-3 flex-wrap">
                 <h2 className="text-lg font-semibold text-slate-800 truncate">
                   Review Submission · {tableDef?.tableName || "Untitled"}
                 </h2>
                 <Badge variant={statusBadge[status] ?? "info"}>
                   {String(status).charAt(0).toUpperCase() + String(status).slice(1)}
                 </Badge>
-                {hasUnsavedEdits && (
+                {priorReview === "pending" ? (
+                  <span className="text-xs font-medium px-2 py-0.5 rounded bg-amber-50 text-amber-700 border border-amber-200">
+                    Pending
+                  </span>
+                ) : (
+                  <span
+                    className={`text-xs font-semibold px-2 py-0.5 rounded border ${
+                      priorReview === "approved"
+                        ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                        : "bg-red-50 text-red-700 border-red-200"
+                    }`}
+                  >
+                    {priorReview === "approved" ? "Approved" : "Rejected"}
+                  </span>
+                )}
+                {hasUnsavedEdits && !isLocked && (
                   <span className="text-xs font-medium text-amber-600 bg-amber-50 px-2 py-0.5 rounded">
                     Unsaved edits
                   </span>
@@ -638,6 +663,35 @@ export const ReviewDrawer: React.FC = () => {
 
           {/* ─── Content (scrollable) ──────────────────────────────────── */}
           <div className="flex-1 overflow-y-auto px-6 py-5 space-y-5">
+            {isLocked && (
+              <div
+                className={`rounded-xl border px-4 py-3 flex items-start gap-3 ${
+                  priorReview === "approved"
+                    ? "bg-emerald-50 border-emerald-200 text-emerald-800"
+                    : "bg-red-50 border-red-200 text-red-800"
+                }`}
+                role="status"
+              >
+                <svg className="w-5 h-5 flex-shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  {priorReview === "approved" ? (
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  ) : (
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  )}
+                </svg>
+                <div className="text-sm">
+                  <div className="font-semibold">
+                    This submission has already been {priorReview}.
+                  </div>
+                  <div className="text-xs mt-0.5 opacity-90">
+                    {priorReview === "approved"
+                      ? "DDL has been applied to the target cluster."
+                      : "The developer was notified of the rejection."}
+                    {reviewedAt && <> · {reviewedAt}</>}
+                  </div>
+                </div>
+              </div>
+            )}
             {/* Table Properties — the submitted table-level metadata. Without
                 this section, fields like Entity Logical Name / Vertical /
                 Business Area / Distribution Style / Definition are silently
@@ -1273,20 +1327,36 @@ export const ReviewDrawer: React.FC = () => {
               onChange={(e) => setRejectReason(e.target.value)}
               placeholder="Reason for rejection (optional)"
               className="w-72 px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500"
+              disabled={isLocked}
             />
 
             <Button
               variant="secondary"
               onClick={() => setConfirmSave(true)}
-              disabled={!hasUnsavedEdits || savingEdit}
+              disabled={!hasUnsavedEdits || savingEdit || isLocked}
+              title={isLocked ? `Already ${priorReview} — column edits can't be saved.` : undefined}
             >
               {savingEdit ? "Saving…" : "Save Edits"}
             </Button>
-            <Button variant="danger" onClick={() => setConfirmReject(true)} disabled={savingEdit}>
+            <Button
+              variant="danger"
+              onClick={() => setConfirmReject(true)}
+              disabled={savingEdit || isLocked}
+              title={isLocked ? `Already ${priorReview} — cannot reject again.` : undefined}
+            >
               Reject
             </Button>
-            <Button variant="primary" onClick={() => setConfirmApprove(true)} disabled={savingEdit}>
-              Approve &amp; Update Data Model
+            <Button
+              variant="primary"
+              onClick={() => setConfirmApprove(true)}
+              disabled={savingEdit || isLocked}
+              title={isLocked ? `Already ${priorReview} — cannot approve again.` : undefined}
+            >
+              {isLocked && priorReview === "approved"
+                ? "Already Approved"
+                : isLocked && priorReview === "rejected"
+                ? "Already Rejected"
+                : "Approve & Update Data Model"}
             </Button>
           </footer>
         </div>

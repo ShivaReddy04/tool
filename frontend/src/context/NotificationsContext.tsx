@@ -1,7 +1,12 @@
 import React, { createContext, useCallback, useContext, useEffect, useState } from "react";
 import api from "../api/client";
 import { useAuth } from "./AuthContext";
-import type { Notification, TableDefinition, ColumnDefinition } from "../types";
+import type {
+  Notification,
+  NotificationReviewStatus,
+  TableDefinition,
+  ColumnDefinition,
+} from "../types";
 
 interface NotificationsContextType {
   notifications: Notification[];
@@ -9,6 +14,10 @@ interface NotificationsContextType {
   addNotification: (n: Notification) => void;
   markNotificationRead: (id: string) => void;
   markAllNotificationsRead: () => void;
+  /** Record the architect's decision on a submission notification so a
+   *  re-open of the review surface can disable Approve / Reject and show
+   *  the prior outcome. */
+  setNotificationReviewStatus: (id: string, status: NotificationReviewStatus) => void;
   deleteNotification: (id: string) => void;
   clearAllNotifications: () => void;
   refreshPendingSubmissions: () => Promise<void>;
@@ -87,6 +96,7 @@ function pendingSubmissionToNotification(s: any): Notification {
     isRead: false,
     targetRole: "architect",
     submissionId: s.id,
+    reviewStatus: "pending",
     tableDefinition,
     columns,
     previousColumns,
@@ -163,6 +173,24 @@ export const NotificationsProvider: React.FC<NotificationsProviderProps> = ({
     setNotifications((prev) => prev.map((n) => (n.id === id ? { ...n, isRead: true } : n)));
   }, []);
 
+  const setNotificationReviewStatus = useCallback(
+    (id: string, status: NotificationReviewStatus) => {
+      setNotifications((prev) =>
+        prev.map((n) =>
+          n.id === id
+            ? {
+                ...n,
+                reviewStatus: status,
+                reviewedAt: status === "pending" ? undefined : new Date().toISOString(),
+                isRead: status === "pending" ? n.isRead : true,
+              }
+            : n,
+        ),
+      );
+    },
+    [],
+  );
+
   const markAllNotificationsRead = useCallback(() => {
     setNotifications((prev) => prev.map((n) => ({ ...n, isRead: true })));
   }, []);
@@ -200,6 +228,7 @@ export const NotificationsProvider: React.FC<NotificationsProviderProps> = ({
         dismissedSubmissionIds,
         addNotification,
         markNotificationRead,
+        setNotificationReviewStatus,
         markAllNotificationsRead,
         deleteNotification,
         clearAllNotifications,
