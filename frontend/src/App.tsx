@@ -5,6 +5,7 @@ import { DashboardProvider, useDashboard } from "./context/DashboardContext";
 import { ProtectedRoute } from "./components/layout/ProtectedRoute";
 import { DeveloperDashboard } from "./pages/DeveloperDashboard";
 import { CreateTablePage } from "./pages/CreateTablePage";
+import { DraftsPage } from "./pages/DraftsPage";
 import { NotificationsPage } from "./pages/NotificationsPage";
 import { LoginPage } from "./pages/LoginPage";
 import { SignupPage } from "./pages/SignupPage";
@@ -46,6 +47,7 @@ const App: React.FC = () => {
           >
             <Route index element={<DeveloperDashboard />} />
             <Route path="new-table" element={<CreateTablePage />} />
+            <Route path="drafts" element={<DraftsPage />} />
             <Route path="notifications" element={<NotificationsPage />} />
             <Route path="tables/:tableId" element={<LegacyTableRedirect />} />
           </Route>

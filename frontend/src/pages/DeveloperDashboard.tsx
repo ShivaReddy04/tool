@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { DashboardLayout } from "../components/layout";
 import { EnvironmentPanel } from "../components/environment";
 import {
@@ -270,13 +271,8 @@ const TableEditCenter: React.FC = () => {
 
 const DraftsReminderModal: React.FC = () => {
   const { user } = useAuth();
-  const {
-    setSelectedClusterId,
-    setSelectedDatabaseId,
-    setSelectedSchemaId,
-    setSelectedTableId,
-  } = useDashboard();
-  const [drafts, setDrafts] = useState<DraftRow[]>([]);
+  const navigate = useNavigate();
+  const [draftsCount, setDraftsCount] = useState(0);
   const [open, setOpen] = useState(false);
 
   // Per-user, per-session suppression key — re-shown on next login so a
@@ -292,7 +288,7 @@ const DraftsReminderModal: React.FC = () => {
         const { data } = await api.get<DraftRow[]>("/table-definitions/drafts/me");
         if (cancelled) return;
         if (Array.isArray(data) && data.length > 0) {
-          setDrafts(data);
+          setDraftsCount(data.length);
           setOpen(true);
         }
       } catch (err) {
@@ -311,59 +307,36 @@ const DraftsReminderModal: React.FC = () => {
     close();
   };
 
-  const continueEditing = (d: DraftRow) => {
-    setSelectedClusterId(d.connection_id);
-    setSelectedDatabaseId(d.database_name);
-    setSelectedSchemaId(d.schema_name);
-    setSelectedTableId(d.id);
-    close();
-  };
-
   if (!open) return null;
 
   return (
     <Modal
       isOpen={open}
       onClose={close}
-      title={`You have ${drafts.length} unfinished draft${drafts.length === 1 ? "" : "s"}`}
-      size="lg"
+      title={`You have ${draftsCount} unfinished draft${draftsCount === 1 ? "" : "s"}`}
+      size="sm"
       footer={
         <>
           <Button variant="ghost" onClick={dismissForSession}>
             Dismiss for this session
           </Button>
-          <Button variant="secondary" onClick={close}>
-            Close
+          <Button
+            variant="primary"
+            onClick={() => {
+              close();
+              navigate("/dashboard/drafts");
+            }}
+          >
+            View Drafts
           </Button>
         </>
       }
     >
-      <div className="space-y-3">
-        <p className="text-sm text-slate-600">
-          The following tables were saved as drafts and haven't been submitted for
-          architect approval yet. Pick one to resume editing, or submit it for review.
-        </p>
-        <div className="border border-slate-200 rounded-xl divide-y divide-slate-100 max-h-[50vh] overflow-auto">
-          {drafts.map((d) => (
-            <div key={d.id} className="flex items-center justify-between gap-3 px-4 py-3">
-              <div className="min-w-0">
-                <div className="text-sm font-semibold text-slate-800 truncate">
-                  {(d.table_name || "").replace(/_/g, " ")}
-                </div>
-                <div className="text-xs text-slate-500 truncate">
-                  {d.schema_name} · {d.database_name}
-                </div>
-                <div className="text-[11px] text-slate-400 mt-0.5">
-                  Last edited {new Date(d.updated_at).toLocaleString()}
-                </div>
-              </div>
-              <Button variant="primary" size="sm" onClick={() => continueEditing(d)}>
-                Continue Editing
-              </Button>
-            </div>
-          ))}
-        </div>
-      </div>
+      <p className="text-sm text-slate-600">
+        Tables saved as drafts haven't been submitted for architect review yet.
+        Open the Drafts page to continue editing, submit for review, or delete
+        them in bulk.
+      </p>
     </Modal>
   );
 };
