@@ -6,6 +6,7 @@ import {
   deleteTableDefinitionById,
   getTableReferences,
   getTableDefinitionByKey,
+  getDraftTableDefinitionsByUser,
 } from '../models/table_definition.model';
 import { bulkUpsertColumnDefinitions, getColumnDefinitionsByTableId } from '../models/column_definition.model';
 import { getClusterConnectionConfig } from '../models/cluster.model';
@@ -151,6 +152,13 @@ export const listTableDefinitions = async (req: Request, res: Response): Promise
   }
   const tables = await getAllTableDefinitions(connectionId as string, schemaName as string);
   res.status(200).json(tables);
+};
+
+export const listMyDrafts = async (req: Request, res: Response): Promise<void> => {
+  const userId = req.user?.userId;
+  if (!userId) throw new HttpError(401, 'Not authenticated');
+  const drafts = await getDraftTableDefinitionsByUser(userId);
+  res.status(200).json(drafts);
 };
 
 /**

@@ -73,6 +73,21 @@ export const getAllTableDefinitions = async (connectionId: string, schemaName: s
     return result.rows;
 };
 
+/**
+ * Drafts owned by a single user, newest-edited first. Drives the "you have
+ * drafts waiting" prompt the developer dashboard surfaces on load so a
+ * partially-edited table doesn't get forgotten between sessions.
+ */
+export const getDraftTableDefinitionsByUser = async (userId: string): Promise<TableDefinition[]> => {
+    const result = await query(
+        `SELECT * FROM table_definitions
+         WHERE status = 'draft' AND created_by = $1
+         ORDER BY updated_at DESC`,
+        [userId]
+    );
+    return result.rows;
+};
+
 export const getTableDefinitionByKey = async (
     connectionId: string,
     databaseName: string,

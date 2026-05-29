@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { DashboardLayout } from "../components/layout";
 import { EnvironmentPanel } from "../components/environment";
 import {
@@ -21,7 +21,17 @@ import {
 import { useDashboard } from "../context/DashboardContext";
 import { useAuth } from "../context/AuthContext";
 import { validateColumnDefault } from "../utils/validation";
+import api from "../api/client";
 import type { Architect } from "../api/architects";
+
+interface DraftRow {
+  id: string;
+  connection_id: string;
+  database_name: string;
+  schema_name: string;
+  table_name: string;
+  updated_at: string;
+}
 
 const statusVariant: Record<string, "neutral" | "info" | "success" | "danger"> = {
   draft: "neutral",
@@ -39,11 +49,13 @@ const SubmitForApprovalBar: React.FC = () => {
     submissionStatus,
     hasUnsavedChanges,
     saveChanges,
+    saveAsDraft,
     submitForReview,
   } = useDashboard();
   const [open, setOpen] = useState(false);
   const [architect, setArchitect] = useState<Architect | null>(null);
   const [busy, setBusy] = useState(false);
+  const [savingDraft, setSavingDraft] = useState(false);
 
   // Block submission when any column's DEFAULT is malformed — the backend
   // would reject anyway, but catching it here surfaces the actionable
@@ -111,22 +123,45 @@ const SubmitForApprovalBar: React.FC = () => {
               architect approval.
             </p>
           </div>
-          <Button
-            variant="primary"
-            onClick={() => setOpen(true)}
-            disabled={submitDisabled}
-            title={
-              isLocked
-                ? "This table is already pending review."
-                : firstInvalidDefault
-                ? firstInvalidDefault
-                : !hasSubmittableWork
-                ? "Make a change or create a new table to enable submission."
-                : "Save and submit changes for architect approval."
-            }
-          >
-            Submit for Approval
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="secondary"
+              onClick={async () => {
+                setSavingDraft(true);
+                try {
+                  await saveAsDraft();
+                } finally {
+                  setSavingDraft(false);
+                }
+              }}
+              disabled={isLocked || savingDraft || (!hasUnsavedChanges && submissionStatus !== "draft")}
+              title={
+                isLocked
+                  ? "This table is already pending review."
+                  : !hasUnsavedChanges && submissionStatus !== "draft"
+                  ? "Nothing to save."
+                  : "Save your work as a draft. You can come back and submit it later."
+              }
+            >
+              {savingDraft ? "Saving…" : "Save as Draft"}
+            </Button>
+            <Button
+              variant="primary"
+              onClick={() => setOpen(true)}
+              disabled={submitDisabled}
+              title={
+                isLocked
+                  ? "This table is already pending review."
+                  : firstInvalidDefault
+                  ? firstInvalidDefault
+                  : !hasSubmittableWork
+                  ? "Make a change or create a new table to enable submission."
+                  : "Save and submit changes for architect approval."
+              }
+            >
+              Submit for Approval
+            </Button>
+          </div>
         </div>
         {firstInvalidDefault && (
           <p className="mt-3 text-xs text-red-600">{firstInvalidDefault}</p>
@@ -233,6 +268,106 @@ const TableEditCenter: React.FC = () => {
   );
 };
 
+const DraftsReminderModal: React.FC = () => {
+  const { user } = useAuth();
+  const {
+    setSelectedClusterId,
+    setSelectedDatabaseId,
+    setSelectedSchemaId,
+    setSelectedTableId,
+  } = useDashboard();
+  const [drafts, setDrafts] = useState<DraftRow[]>([]);
+  const [open, setOpen] = useState(false);
+
+  // Per-user, per-session suppression key — re-shown on next login so a
+  // forgotten draft can't quietly age out forever.
+  const dismissKey = user ? `dart_drafts_dismissed_${user.id}` : null;
+
+  useEffect(() => {
+    if (!user || !dismissKey) return;
+    if (sessionStorage.getItem(dismissKey) === "1") return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const { data } = await api.get<DraftRow[]>("/table-definitions/drafts/me");
+        if (cancelled) return;
+        if (Array.isArray(data) && data.length > 0) {
+          setDrafts(data);
+          setOpen(true);
+        }
+      } catch (err) {
+        // Drafts reminder is non-critical — never block the dashboard.
+        console.warn("Failed to load drafts:", err);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [user, dismissKey]);
+
+  const close = () => setOpen(false);
+  const dismissForSession = () => {
+    if (dismissKey) sessionStorage.setItem(dismissKey, "1");
+    close();
+  };
+
+  const continueEditing = (d: DraftRow) => {
+    setSelectedClusterId(d.connection_id);
+    setSelectedDatabaseId(d.database_name);
+    setSelectedSchemaId(d.schema_name);
+    setSelectedTableId(d.id);
+    close();
+  };
+
+  if (!open) return null;
+
+  return (
+    <Modal
+      isOpen={open}
+      onClose={close}
+      title={`You have ${drafts.length} unfinished draft${drafts.length === 1 ? "" : "s"}`}
+      size="lg"
+      footer={
+        <>
+          <Button variant="ghost" onClick={dismissForSession}>
+            Dismiss for this session
+          </Button>
+          <Button variant="secondary" onClick={close}>
+            Close
+          </Button>
+        </>
+      }
+    >
+      <div className="space-y-3">
+        <p className="text-sm text-slate-600">
+          The following tables were saved as drafts and haven't been submitted for
+          architect approval yet. Pick one to resume editing, or submit it for review.
+        </p>
+        <div className="border border-slate-200 rounded-xl divide-y divide-slate-100 max-h-[50vh] overflow-auto">
+          {drafts.map((d) => (
+            <div key={d.id} className="flex items-center justify-between gap-3 px-4 py-3">
+              <div className="min-w-0">
+                <div className="text-sm font-semibold text-slate-800 truncate">
+                  {(d.table_name || "").replace(/_/g, " ")}
+                </div>
+                <div className="text-xs text-slate-500 truncate">
+                  {d.schema_name} · {d.database_name}
+                </div>
+                <div className="text-[11px] text-slate-400 mt-0.5">
+                  Last edited {new Date(d.updated_at).toLocaleString()}
+                </div>
+              </div>
+              <Button variant="primary" size="sm" onClick={() => continueEditing(d)}>
+                Continue Editing
+              </Button>
+            </div>
+          ))}
+        </div>
+      </div>
+    </Modal>
+  );
+};
+
 export const DeveloperDashboard: React.FC = () => {
   const { toasts, dismissToast, tableDefinition } = useDashboard();
 
@@ -249,6 +384,7 @@ export const DeveloperDashboard: React.FC = () => {
         centerPanel={tableDefinition ? <TableEditCenter /> : <NoTableCenter />}
         rightPanel={tableDefinition ? null : <TablePropertiesPanel />}
       />
+      <DraftsReminderModal />
       <DeleteTableModal />
       <ReviewDrawer />
       <ToastContainer toasts={toasts} onDismiss={dismissToast} />

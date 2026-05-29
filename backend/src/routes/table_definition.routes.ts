@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { saveTableDefinition, getTableDefinition, listTableDefinitions, dryRunTableDefinition, removeTableDefinition, getTableDefinitionByCompositeKey } from '../controllers/table_definition.controller';
+import { saveTableDefinition, getTableDefinition, listTableDefinitions, dryRunTableDefinition, removeTableDefinition, getTableDefinitionByCompositeKey, listMyDrafts } from '../controllers/table_definition.controller';
 import { authenticate, authorize } from '../middleware/auth';
 import { validate } from '../middleware/validate';
 import { saveTableDefinitionBody, dryRunTableBody } from '../schemas/tableDefinition';
@@ -13,6 +13,7 @@ router.post('/dry-run', authorize('developer', 'admin', 'architect'), validate(d
 router.get('/', listTableDefinitions);
 // Must be registered before "/:id" so the by-key path isn't shadowed.
 router.get('/by-key', getTableDefinitionByCompositeKey);
+router.get('/drafts/me', listMyDrafts);
 router.get('/:id', getTableDefinition);
 router.delete('/:id', authorize('developer', 'admin', 'architect'), removeTableDefinition);
 

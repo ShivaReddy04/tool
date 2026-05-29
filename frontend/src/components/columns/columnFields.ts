@@ -198,8 +198,15 @@ export const COLUMN_FIELDS: ColumnFieldSpec[] = [
     label: "Column Sequence",
     width: 110,
     kind: "number",
-    get: (c) => c.sortOrder ?? 0,
-    set: (c, v) => ({ ...c, sortOrder: Number(v) || 0 }),
+    // Display is 1-based ("Column Sequence" reads 1, 2, 3…) but storage stays
+    // 0-based on the wire (sort_order column) so existing rows don't need
+    // backfill and the DDL ordering logic stays unchanged.
+    get: (c) => (c.sortOrder ?? 0) + 1,
+    set: (c, v) => {
+      const n = Number(v);
+      const oneBased = Number.isFinite(n) && n >= 1 ? n : 1;
+      return { ...c, sortOrder: oneBased - 1 };
+    },
   },
   {
     key: "sourceTableName",

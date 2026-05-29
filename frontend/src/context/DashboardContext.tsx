@@ -117,6 +117,7 @@ interface DashboardContextType {
   setHasUnsavedChanges: (v: boolean) => void;
   submissionStatus: SubmissionStatus;
   saveChanges: () => Promise<string | null>;
+  saveAsDraft: () => Promise<string | null>;
   submitForReview: (
     submittedById: string,
     assignedArchitectId: string,
@@ -200,7 +201,7 @@ export function columnFromServer(c: any): ColumnDefinition {
   };
 }
 
-function columnToServer(c: ColumnDefinition, fallbackSortOrder: number): Record<string, unknown> {
+export function columnToServer(c: ColumnDefinition, fallbackSortOrder: number): Record<string, unknown> {
   return {
     column_name: c.columnName,
     data_type: c.dataType,
@@ -426,6 +427,20 @@ const DashboardCoreProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       return null;
     }
   }, [tableDefinition, columns, selectedClusterId, selectedDatabaseId, selectedSchemaId, submissionStatus, addToast]);
+
+  // Explicit "save as draft" — force the wire payload's status to 'draft' so
+  // a developer can park unfinished work without it slipping into the
+  // architect's review queue. Reuses saveChanges by flipping submissionStatus
+  // ahead of the call so the existing transactional save path is the only
+  // place that talks to the backend.
+  const saveAsDraft = useCallback(async (): Promise<string | null> => {
+    if (!tableDefinition) return null;
+    if (submissionStatus !== "draft") setSubmissionStatus("draft");
+    // Defer one tick so the status state update lands before saveChanges
+    // reads it from closure.
+    await new Promise((r) => setTimeout(r, 0));
+    return saveChanges();
+  }, [tableDefinition, submissionStatus, saveChanges]);
 
   const submitForReview = useCallback(
     async (
@@ -1125,6 +1140,7 @@ const DashboardCoreProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         setHasUnsavedChanges,
         submissionStatus,
         saveChanges,
+        saveAsDraft,
         submitForReview,
         reviewingNotification,
         setReviewingNotification,
