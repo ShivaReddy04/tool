@@ -38,17 +38,30 @@ const baseCellClass =
 const renderReadOnlyCell = (field: ColumnFieldSpec, col: ColumnDefinition): React.ReactNode => {
   const value = field.get(col);
   if (field.kind === 'checkbox') {
+    // Render an explicit two-state pill so `false` reads as "No" rather than
+    // "missing". The previous "—" fallback made every non-PK / non-stats /
+    // non-sort-key / non-dist-key row look like it had unbound data.
     return value ? (
-      <span className="inline-flex items-center justify-center w-5 h-5 rounded bg-indigo-100 text-indigo-700">
+      <span className="inline-flex items-center justify-center w-5 h-5 rounded bg-indigo-100 text-indigo-700" aria-label="Yes">
         <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
         </svg>
       </span>
     ) : (
-      <span className="text-slate-300">—</span>
+      <span
+        className="inline-flex items-center justify-center w-5 h-5 rounded border border-slate-300 text-slate-300 text-[10px]"
+        aria-label="No"
+      >
+        ✕
+      </span>
     );
   }
-  const display = String(value ?? '');
+  // Numbers (0, sortOrder, etc.) must render as themselves — `0 || '—'` would
+  // wipe the value, but a stringified "0" is meaningful and should stay.
+  if (typeof value === 'number') {
+    return <span className="font-mono">{value}</span>;
+  }
+  const display = String(value ?? '').trim();
   if (!display) return <span className="text-slate-300">—</span>;
   if (field.kind === 'select' && field.key === 'dataType') {
     return <span className="font-mono">{display}</span>;

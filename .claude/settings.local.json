@@ -63,7 +63,11 @@
       "Bash(Get-ChildItem -Path \"C:\\\\Users\\\\panya\\\\Desktop\\\\dart\\\\backend\\\\migrations\" -Filter \"*.js\")",
       "Bash(Select-Object Name)",
       "Bash(Sort-Object Name)",
-      "Bash(Get-ChildItem -Path \"C:\\\\Users\\\\panya\\\\Desktop\\\\dart\\\\backend\\\\src\\\\controllers\" -Filter \"*.ts\")"
+      "Bash(Get-ChildItem -Path \"C:\\\\Users\\\\panya\\\\Desktop\\\\dart\\\\backend\\\\src\\\\controllers\" -Filter \"*.ts\")",
+      "Bash(dir)",
+      "Bash(set CI=true)",
+      "Bash(npx react-scripts *)",
+      "Bash(grep -E \"\\(Line|src\\\\\\\\\\\\\\\\\\)\")"
     ]
   }
 }
