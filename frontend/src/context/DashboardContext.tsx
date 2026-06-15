@@ -990,7 +990,11 @@ const DashboardCoreProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       isDistKey: false,
       sourceDatabaseName: "",
     };
-    setColumns((prev) => [...prev, newColumn]);
+    // Append at the end of the sequence: sort_order is 0-based, so the new
+    // column's order is the current count, which renders as "Column Sequence"
+    // = count + 1 (…1, 2, 3, 4). Without this it defaults to 0 and every added
+    // column would read "1".
+    setColumns((prev) => [...prev, { ...newColumn, sortOrder: prev.length }]);
     setSelectedColumnId(newId);
     setRightPanelMode("column-detail");
     setHasUnsavedChanges(true);
