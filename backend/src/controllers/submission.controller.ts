@@ -21,6 +21,7 @@ const computeApplyStatements = async (
   schemaName: string,
   tableName: string,
   columns: DDLColumn[],
+  distStyle?: string | null,
 ): Promise<string[]> => {
   const existingTables: any[] = await connector.getTables(config, schemaName);
   const tableExists = existingTables.some(
@@ -32,7 +33,7 @@ const computeApplyStatements = async (
     if (dbType === 'postgresql' || dbType === 'redshift') {
       statements.push(`CREATE SCHEMA IF NOT EXISTS "${schemaName.replace(/"/g, '""')}"`);
     }
-    const create = buildCreateTableDDL(dbType, schemaName, tableName, columns);
+    const create = buildCreateTableDDL(dbType, schemaName, tableName, columns, distStyle);
     if (create) statements.push(create);
   } else if (hasPendingChanges(columns)) {
     statements.push(...buildAlterDDL(dbType, schemaName, tableName, columns));
@@ -135,6 +136,7 @@ export const submitTableForReview = async (req: Request, res: Response): Promise
       tableSnapshot.schema_name,
       tableSnapshot.table_name,
       columnsSnapshot as unknown as DDLColumn[],
+      (tableSnapshot as any).distribution_style,
     );
     if (ddlStatements.length > 0) {
       try {
@@ -157,6 +159,7 @@ export const submitTableForReview = async (req: Request, res: Response): Promise
         tableSnapshot.schema_name,
         tableSnapshot.table_name,
         columnsSnapshot as unknown as DDLColumn[],
+        (tableSnapshot as any).distribution_style,
       );
     } catch (e: any) {
       console.warn('[submission] DDL preview computation failed; payload will omit it:', e?.message || e);
@@ -295,6 +298,7 @@ export const handleReviewAndSync = async (req: Request, res: Response): Promise<
         tableDef.schema_name,
         tableDef.table_name,
         snapshotColumns,
+        (tableDef as any).distribution_style,
       );
 
       if (statements.length > 0) {

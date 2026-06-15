@@ -18,8 +18,10 @@ import {
   type TableDefinition,
   type ColumnDefinition,
   type DistributionStyle,
+  type DbType,
 } from "../types";
 import { COLUMN_FIELDS, type ColumnFieldSpec } from "../components/columns/columnFields";
+import { generateCreateTableDDL } from "../utils/ddlPreview";
 
 const DISTRIBUTION_OPTIONS = [
   { value: "KEY", label: "KEY" },
@@ -76,6 +78,8 @@ export const CreateTablePage: React.FC = () => {
     submitForReview,
     selectedSchemaId,
     selectedBusinessArea,
+    clusters,
+    selectedClusterId,
     toasts,
     dismissToast,
   } = useDashboard();
@@ -145,6 +149,26 @@ export const CreateTablePage: React.FC = () => {
   }, [newColumns]);
 
   const firstDefaultError = defaultErrors.size > 0 ? Array.from(defaultErrors.values())[0] : null;
+
+  // Live DDL preview — mirrors the server-side generator so the developer sees
+  // the exact CREATE TABLE (including Redshift DISTSTYLE/DISTKEY/SORTKEY) the
+  // approval pipeline will run. Dialect comes from the target connection.
+  const previewDbType = useMemo<DbType>(() => {
+    const cluster = clusters.find((c) => c.id === selectedClusterId) as any;
+    return (cluster?.dbType as DbType) || "postgresql";
+  }, [clusters, selectedClusterId]);
+
+  const ddlPreview = useMemo(
+    () =>
+      generateCreateTableDDL({
+        dbType: previewDbType,
+        schema: formData.schemaName,
+        table: formData.tableName,
+        distributionStyle: formData.distributionStyle,
+        columns: newColumns,
+      }),
+    [previewDbType, formData.schemaName, formData.tableName, formData.distributionStyle, newColumns],
+  );
 
   const updateFormField = (field: keyof CreateTableFormState, value: string) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
@@ -614,6 +638,38 @@ export const CreateTablePage: React.FC = () => {
                   </tbody>
                 </table>
               </div>
+            </Card>
+
+            <Card
+              title="DDL Preview"
+              subtitle={`Generated CREATE statement for the target dialect (${previewDbType}).`}
+              headerAction={
+                ddlPreview ? (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => navigator.clipboard?.writeText(ddlPreview)}
+                  >
+                    Copy
+                  </Button>
+                ) : undefined
+              }
+            >
+              {ddlPreview ? (
+                <pre className="overflow-auto rounded-md bg-slate-900 px-4 py-3 text-xs leading-relaxed text-slate-100 whitespace-pre">
+                  {ddlPreview}
+                </pre>
+              ) : (
+                <p className="text-xs text-slate-500">
+                  Enter a table name and at least one column to preview the DDL.
+                </p>
+              )}
+              {previewDbType !== "redshift" && (
+                <p className="mt-2 text-[11px] text-slate-400">
+                  DISTSTYLE / DISTKEY / SORTKEY apply only to Redshift connections and are
+                  omitted for {previewDbType}.
+                </p>
+              )}
             </Card>
           </div>
         </main>

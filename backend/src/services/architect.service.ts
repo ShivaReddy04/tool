@@ -81,7 +81,7 @@ export const processTemplate = async (id: string, reviewerId: string) => {
     if (dbType === 'postgresql' || dbType === 'redshift') {
       statements.push(`CREATE SCHEMA IF NOT EXISTS "${table.schema_name.replace(/"/g, '""')}"`);
     }
-    const create = buildCreateTableDDL(dbType, table.schema_name, table.table_name, columns);
+    const create = buildCreateTableDDL(dbType, table.schema_name, table.table_name, columns, (table as any).distribution_style);
     if (create) statements.push(create);
   } else if (hasPendingChanges(columns)) {
     statements.push(...buildAlterDDL(dbType, table.schema_name, table.table_name, columns));

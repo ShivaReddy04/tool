@@ -16,6 +16,10 @@ export interface DDLColumn {
     is_primary_key?: boolean;
     default_value?: string | null;
     action?: 'No Change' | 'Modify' | 'Add' | 'Drop';
+    // Redshift distribution / sort metadata. Only consulted when emitting
+    // Redshift DDL; ignored for other dialects.
+    is_dist_key?: boolean;
+    is_sort_key?: boolean;
 }
 
 function quoteIdent(dbType: DbType, ident: string): string {
@@ -46,7 +50,8 @@ export function buildCreateTableDDL(
     dbType: DbType,
     schema: string,
     table: string,
-    columns: DDLColumn[]
+    columns: DDLColumn[],
+    distStyle?: string | null
 ): string | null {
     const included = columns.filter((c) => c.action !== 'Drop');
     if (included.length === 0) return null;
@@ -58,7 +63,44 @@ export function buildCreateTableDDL(
         columnDefs.push(`PRIMARY KEY (${pkCols.join(', ')})`);
     }
 
-    return `CREATE TABLE ${qualified(dbType, schema, table)} (${columnDefs.join(', ')})`;
+    let ddl = `CREATE TABLE ${qualified(dbType, schema, table)} (${columnDefs.join(', ')})`;
+
+    // DISTSTYLE / DISTKEY / SORTKEY are Redshift-only table attributes — other
+    // engines reject them, so only append for redshift.
+    if (dbType === 'redshift') {
+        const clauses = buildRedshiftDistributionClauses(included, distStyle);
+        if (clauses) ddl += ` ${clauses}`;
+    }
+
+    return ddl;
+}
+
+/**
+ * Build the trailing Redshift table-attribute clauses, e.g.
+ *   DISTSTYLE KEY DISTKEY("emp_id") SORTKEY("hire_date")
+ *
+ * - DISTSTYLE comes from the table's distribution_style (KEY/EVEN/ALL/AUTO).
+ * - DISTKEY is only valid with DISTSTYLE KEY and Redshift permits exactly one,
+ *   so the first column flagged is_dist_key is used.
+ * - SORTKEY lists every column flagged is_sort_key, in column order.
+ */
+function buildRedshiftDistributionClauses(columns: DDLColumn[], distStyle?: string | null): string {
+    const clauses: string[] = [];
+    const style = (distStyle || '').toUpperCase();
+
+    if (style === 'KEY' || style === 'EVEN' || style === 'ALL' || style === 'AUTO') {
+        clauses.push(`DISTSTYLE ${style}`);
+    }
+
+    if (style === 'KEY') {
+        const distKeyCol = columns.find((c) => c.is_dist_key);
+        if (distKeyCol) clauses.push(`DISTKEY(${quoteIdent('redshift', distKeyCol.column_name)})`);
+    }
+
+    const sortKeyCols = columns.filter((c) => c.is_sort_key).map((c) => quoteIdent('redshift', c.column_name));
+    if (sortKeyCols.length > 0) clauses.push(`SORTKEY(${sortKeyCols.join(', ')})`);
+
+    return clauses.join(' ');
 }
 
 /**
