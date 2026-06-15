@@ -156,13 +156,14 @@ export const CreateTablePage: React.FC = () => {
   }, []);
 
   const handleTableNameChange = useCallback((raw: string) => {
-    // Both fields show spaces in the UI — any underscore the user pastes or
-    // types is normalized to a space immediately.
-    const displayed = raw.replace(/_/g, " ");
+    // Table Name is a single continuous identifier — no spaces, no underscores.
+    // Strip both for the stored name, but derive the human-readable Entity
+    // Logical Name from the raw input (which may still carry separators) first.
+    const compact = raw.replace(/[\s_]+/g, "");
     setFormData((prev) => ({
       ...prev,
-      tableName: displayed,
-      entityLogicalName: generateEntityLogicalName(displayed),
+      tableName: compact,
+      entityLogicalName: generateEntityLogicalName(raw),
     }));
   }, []);
 
@@ -171,7 +172,8 @@ export const CreateTablePage: React.FC = () => {
     setFormData((prev) => ({
       ...prev,
       entityLogicalName: displayed,
-      tableName: generateTableName(displayed).replace(/_/g, " "),
+      // Continuous physical name: drop the separators between abbreviations.
+      tableName: generateTableName(displayed).replace(/_/g, ""),
     }));
   }, []);
 

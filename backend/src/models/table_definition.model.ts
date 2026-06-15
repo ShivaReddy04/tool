@@ -99,6 +99,53 @@ export const getTableDefinitionByKey = async (
     return result.rows[0] || null;
 };
 
+/**
+ * Resolve the DART metadata row for a browsed physical table.
+ *
+ * The same physical database can be registered as more than one DART
+ * connection (e.g. the same Neon DB added twice under different names). Table
+ * metadata is stored against whichever connection created it, so a strict
+ * connection-scoped match (getTableDefinitionByKey) misses when the table is
+ * opened through a sibling connection — the UI then falls back to bare columns
+ * read straight from the cluster, losing attribute name / classification /
+ * domain / definition / etc.
+ *
+ * Match the exact connection first, then fall back to any connection that
+ * targets the same physical server (same host + port + database) so the rich
+ * metadata still resolves. The same-server guard keeps two genuinely separate
+ * databases that happen to share a schema/table name from cross-contaminating.
+ *
+ * Read path only — the save path still uses the strict key (getTableDefinitionByKey)
+ * so a save through a sibling connection creates its own row rather than
+ * silently mutating another connection's.
+ */
+export const findTableDefinitionByPhysicalTarget = async (
+    connectionId: string,
+    databaseName: string,
+    schemaName: string,
+    tableName: string,
+    executor: Executor = defaultExecutor
+): Promise<TableDefinition | null> => {
+    const result = await executor.query(
+        `SELECT td.* FROM table_definitions td
+         WHERE td.database_name = $2 AND td.schema_name = $3 AND td.table_name = $4
+           AND (
+             td.connection_id = $1
+             OR td.connection_id IN (
+               SELECT sib.id FROM connections sib
+               JOIN connections req ON req.id = $1
+               WHERE sib.host = req.host
+                 AND sib.port = req.port
+                 AND sib.database_name = req.database_name
+             )
+           )
+         ORDER BY (td.connection_id = $1) DESC
+         LIMIT 1`,
+        [connectionId, databaseName, schemaName, tableName]
+    );
+    return result.rows[0] || null;
+};
+
 export const updateTableStatus = async (id: string, status: string): Promise<void> => {
     await query('UPDATE table_definitions SET status = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2', [status, id]);
 };

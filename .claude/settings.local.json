@@ -80,7 +80,9 @@
       "Bash(curl -s -m 60 -w '\\\\nHTTP:%{http_code}\\\\n' -X POST https://tool-oxax.onrender.com/api/auth/login -H 'Content-Type: application/json' -d '{\"email\":\"nobody@example.com\",\"password\":\"wrongpass\"}')",
       "Bash(curl -s -m 60 -w '\\\\nHTTP:%{http_code}\\\\n' -X POST https://tool-oxax.onrender.com/api/auth/refresh-token -H 'Content-Type: application/json' -d '{}')",
       "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:3000)",
-      "Bash(curl -s -X POST http://localhost:5000/api/auth/login -H \"Content-Type: application/json\" -d '{\"email\":\"arch.diag@example.com\",\"password\":\"Test12345\"}')"
+      "Bash(curl -s -X POST http://localhost:5000/api/auth/login -H \"Content-Type: application/json\" -d '{\"email\":\"arch.diag@example.com\",\"password\":\"Test12345\"}')",
+      "Bash(curl -s -X POST http://localhost:5000/api/auth/signup -H 'Content-Type: application/json' -d '{\"email\":\"xconn.diag@example.com\",\"password\":\"Test12345\",\"firstName\":\"X\",\"lastName\":\"Conn\"}')",
+      "Bash(curl -s -X POST http://localhost:5000/api/auth/login -H 'Content-Type: application/json' -d '{\"email\":\"xconn.diag@example.com\",\"password\":\"Test12345\"}')"
     ]
   }
 }

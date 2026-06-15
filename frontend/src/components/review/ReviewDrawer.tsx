@@ -271,6 +271,9 @@ export const ReviewDrawer: React.FC = () => {
   const [activeTab, setActiveTab] = useState<"columns" | "compare" | "ddl">("columns");
   const [compareTargetId, setCompareTargetId] = useState<string | null>(null);
   const [expandedRowId, setExpandedRowId] = useState<string | null>(null);
+  // Default to showing every column's full attribute set inline so the
+  // architect sees all submitted data up front, not just the summary columns.
+  const [expandAllAttributes, setExpandAllAttributes] = useState(true);
   const [propsExpanded, setPropsExpanded] = useState(true);
 
   /* Reset working state every time a new submission is loaded so a previous
@@ -852,6 +855,15 @@ export const ReviewDrawer: React.FC = () => {
                     </button>
                   </label>
 
+                  <button
+                    onClick={() => setExpandAllAttributes((v) => !v)}
+                    className="text-xs border border-slate-200 rounded-lg px-2.5 py-1.5 hover:bg-slate-50 text-slate-600"
+                    title="Show or hide every column attribute inline"
+                    aria-pressed={expandAllAttributes}
+                  >
+                    {expandAllAttributes ? "Hide extra attributes" : "Show all attributes"}
+                  </button>
+
                   <div className="flex items-center gap-2 ml-auto">
                     <span className="text-xs text-slate-500">
                       {selectedIds.size} selected
@@ -1190,7 +1202,7 @@ export const ReviewDrawer: React.FC = () => {
                                   </td>
                                 </tr>
                               )}
-                              {expandedRowId === col.id && !isEditing && (
+                              {(expandAllAttributes || expandedRowId === col.id) && !isEditing && (
                                 <tr className="bg-slate-50/60">
                                   <td />
                                   <td colSpan={11} className="px-4 py-3">

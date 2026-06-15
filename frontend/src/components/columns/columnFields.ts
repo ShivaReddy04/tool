@@ -48,6 +48,17 @@ const CLASSIFICATION_OPTIONS = [
   { value: "Restricted", label: "Restricted" },
 ];
 
+const DATA_DOMAIN_OPTIONS = [
+  "Customer",
+  "Employee",
+  "Finance",
+  "Product",
+  "Sales",
+  "Marketing",
+  "Operations",
+  "Reference",
+].map((v) => ({ value: v, label: v }));
+
 /* The full attribute set captured at table creation. Order here drives the
    column order in: CreateTableDrawer (editable), ColumnDataGrid (read-only
    plus editable Action), and ReviewDrawer (read-only).
@@ -75,7 +86,8 @@ export const COLUMN_FIELDS: ColumnFieldSpec[] = [
       return {
         ...c,
         attributeName: attr,
-        columnName: generateTableName(attr),
+        // Continuous physical name: drop the separators between abbreviations.
+        columnName: generateTableName(attr).replace(/_/g, ""),
       };
     },
   },
@@ -87,11 +99,14 @@ export const COLUMN_FIELDS: ColumnFieldSpec[] = [
     required: true,
     get: (c) => c.columnName,
     set: (c, v) => {
-      const col = String(v);
+      // Column Name is a single continuous identifier — strip spaces and
+      // underscores. Derive the human-readable Attribute Name from the raw
+      // input (which may still carry separators) before compacting.
+      const raw = String(v);
       return {
         ...c,
-        columnName: col,
-        attributeName: generateEntityLogicalName(col),
+        columnName: raw.replace(/[\s_]+/g, ""),
+        attributeName: generateEntityLogicalName(raw),
       };
     },
   },
@@ -108,7 +123,8 @@ export const COLUMN_FIELDS: ColumnFieldSpec[] = [
     key: "dataDomain",
     label: "Data Domain",
     width: 140,
-    kind: "text",
+    kind: "select",
+    options: DATA_DOMAIN_OPTIONS,
     get: (c) => c.dataDomain,
     set: (c, v) => ({ ...c, dataDomain: String(v) }),
   },

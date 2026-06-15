@@ -5,7 +5,7 @@ import {
   getAllTableDefinitions,
   deleteTableDefinitionById,
   getTableReferences,
-  getTableDefinitionByKey,
+  findTableDefinitionByPhysicalTarget,
   getDraftTableDefinitionsByUser,
 } from '../models/table_definition.model';
 import { bulkUpsertColumnDefinitions, getColumnDefinitionsByTableId } from '../models/column_definition.model';
@@ -139,7 +139,7 @@ export const getTableDefinitionByCompositeKey = async (req: Request, res: Respon
   if (!connectionId || !database || !schema || !table) {
     throw new HttpError(400, 'connectionId, database, schema, and table query parameters are required');
   }
-  const row = await getTableDefinitionByKey(connectionId, database, schema, table);
+  const row = await findTableDefinitionByPhysicalTarget(connectionId, database, schema, table);
   if (!row) throw new HttpError(404, 'No DART table definition exists for this physical table');
   const columns = await getColumnDefinitionsByTableId(row.id);
   res.status(200).json({ table: row, columns });

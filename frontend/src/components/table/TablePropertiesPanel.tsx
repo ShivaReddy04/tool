@@ -218,10 +218,11 @@ export const TablePropertiesPanel: React.FC = () => {
             label="Table Name"
             value={draft.tableName}
             onChange={(e) => {
-              const displayed = e.target.value.replace(/_/g, " ");
+              // Continuous physical table name: no spaces, no underscores.
+              const raw = e.target.value;
               updateDraft({
-                tableName: displayed,
-                entityLogicalName: generateEntityLogicalName(displayed),
+                tableName: raw.replace(/[\s_]+/g, ""),
+                entityLogicalName: generateEntityLogicalName(raw),
               });
             }}
             required
@@ -234,7 +235,8 @@ export const TablePropertiesPanel: React.FC = () => {
               const displayed = e.target.value.replace(/_/g, " ");
               updateDraft({
                 entityLogicalName: displayed,
-                tableName: generateTableName(displayed).replace(/_/g, " "),
+                // Continuous physical name: drop the separators between abbreviations.
+                tableName: generateTableName(displayed).replace(/_/g, ""),
               });
             }}
           />
