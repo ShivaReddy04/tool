@@ -67,7 +67,18 @@
       "Bash(dir)",
       "Bash(set CI=true)",
       "Bash(npx react-scripts *)",
-      "Bash(grep -E \"\\(Line|src\\\\\\\\\\\\\\\\\\)\")"
+      "Bash(grep -E \"\\(Line|src\\\\\\\\\\\\\\\\\\)\")",
+      "Bash(ls -la .env)",
+      "Bash(grep -oE '^[A-Z_]+' .env)",
+      "Bash(curl -s -o /dev/null -w \"health:%{http_code}\\\\n\" http://localhost:5000/api/health http://localhost:3001/api/health http://localhost:8080/api/health http://localhost:4000/api/health)",
+      "Bash(sed 's/\\\\\\(DATABASE_URL=\\\\\\).*/\\\\1<redacted>/')",
+      "Bash(curl -s -w '\\\\nHTTP:%{http_code}\\\\n' -X POST http://localhost:5000/api/auth/login -H 'Content-Type: application/json' -d '{\"email\":\"nobody@example.com\",\"password\":\"wrongpass\"}')",
+      "Bash(curl -s -w '\\\\nHTTP:%{http_code}\\\\n' -X POST http://localhost:5000/api/auth/refresh-token -H 'Content-Type: application/json' -d '{}')",
+      "Bash(curl -s -w '\\\\nHTTP:%{http_code}\\\\n' -X POST http://localhost:5000/api/auth/signup -H 'Content-Type: application/json' -d '{\"email\":\"diagtest+login@example.com\",\"password\":\"Test12345\",\"firstName\":\"Diag\",\"lastName\":\"Test\"}')",
+      "Bash(curl -s -w '\\\\nHTTP:%{http_code}\\\\n' -X POST http://localhost:5000/api/auth/login -H 'Content-Type: application/json' -d '{\"email\":\"diagtest+login@example.com\",\"password\":\"Test12345\"}')",
+      "Bash(curl -s -m 60 -w '\\\\nHTTP:%{http_code}\\\\n' https://tool-oxax.onrender.com/api/health)",
+      "Bash(curl -s -m 60 -w '\\\\nHTTP:%{http_code}\\\\n' -X POST https://tool-oxax.onrender.com/api/auth/login -H 'Content-Type: application/json' -d '{\"email\":\"nobody@example.com\",\"password\":\"wrongpass\"}')",
+      "Bash(curl -s -m 60 -w '\\\\nHTTP:%{http_code}\\\\n' -X POST https://tool-oxax.onrender.com/api/auth/refresh-token -H 'Content-Type: application/json' -d '{}')"
     ]
   }
 }
