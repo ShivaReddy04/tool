@@ -59,7 +59,11 @@ export const COLUMN_FIELDS: ColumnFieldSpec[] = [
     label: "Attribute Name",
     width: 170,
     kind: "text",
-    get: (c) => c.attributeName ?? "",
+    // Attribute Name is a human-readable alias of the physical column name. If
+    // it was never persisted (older rows, columns discovered from the physical
+    // schema), derive it from columnName on display so the cell is never blank
+    // — the same expansion used when typing a column name regenerates it.
+    get: (c) => c.attributeName || generateEntityLogicalName(c.columnName),
     // Editing the attribute (human-readable) re-derives the physical column
     // name through the same abbreviation dictionary used for table metadata
     // (Table Name ↔ Entity Logical Name). This is bidirectional: changing

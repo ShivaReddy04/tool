@@ -15,6 +15,7 @@ import type {
   BusinessArea,
 } from "../types";
 import type { ToastData } from "../components/common/Toast";
+import { generateEntityLogicalName } from "../utils/abbreviations";
 
 /**
  * NOTE ON STRUCTURE
@@ -184,7 +185,11 @@ export function columnFromServer(c: any): ColumnDefinition {
     defaultValue: c.default_value || "",
     action: c.action || "No Change",
     sortOrder: typeof c.sort_order === "number" ? c.sort_order : 0,
-    attributeName: c.attribute_name || "",
+    // Attribute Name is a human-readable alias of the physical column name.
+    // Rows that never had it persisted (legacy data, columns discovered from
+    // the physical schema) come back empty — derive it from column_name on
+    // load so it's never blank in any view, and a subsequent save backfills it.
+    attributeName: c.attribute_name || generateEntityLogicalName(c.column_name || ""),
     hasStats: !!c.has_stats,
     compressValue: c.compress_value || "",
     columnFormat: c.column_format || "",
