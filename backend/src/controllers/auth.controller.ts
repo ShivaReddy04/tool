@@ -70,7 +70,14 @@ const createAccount = async (req: Request, res: Response, role: UserRole): Promi
   res.status(201).json(body);
 };
 
-export const signup = (req: Request, res: Response): Promise<void> => createAccount(req, res, 'developer');
+// Public signup honors the role chosen on the form, but only the two
+// non-privileged roles — anything else (notably 'admin') falls back to
+// developer so the public endpoint can never mint a privileged account.
+export const signup = (req: Request, res: Response): Promise<void> => {
+  const requested = (req.body as SignupInput).role;
+  const role: UserRole = requested === 'architect' ? 'architect' : 'developer';
+  return createAccount(req, res, role);
+};
 export const signupDeveloper = (req: Request, res: Response): Promise<void> => createAccount(req, res, 'developer');
 // Architect accounts must not be self-served — the route mounts this behind
 // authenticate + authorize('admin'), so by the time we get here we already
