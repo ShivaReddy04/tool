@@ -7,6 +7,7 @@ import {
 import api from "../../api/client";
 import { Button, Badge, ConfirmDialog } from "../common";
 import { validateColumnDefault } from "../../utils/validation";
+import { COLUMN_FIELDS, type ColumnFieldSpec } from "../columns/columnFields";
 import type {
   ColumnAction,
   ColumnDefinition,
@@ -64,30 +65,6 @@ const statusBadge: Record<
   applied: "success",
   processed: "success",
 };
-
-const DATA_TYPE_OPTIONS = [
-  "SMALLINT",
-  "INTEGER",
-  "BIGINT",
-  "DECIMAL",
-  "REAL",
-  "DOUBLE PRECISION",
-  "BOOLEAN",
-  "CHAR",
-  "VARCHAR",
-  "DATE",
-  "TIMESTAMP",
-  "TIMESTAMPTZ",
-  "SUPER",
-];
-
-const CLASSIFICATION_OPTIONS = [
-  "Public",
-  "Internal",
-  "Confidential",
-  "PII",
-  "Restricted",
-];
 
 const SQL_KEYWORDS = new Set([
   "CREATE",
@@ -270,6 +247,10 @@ export const ReviewDrawer: React.FC = () => {
   const [rejectReason, setRejectReason] = useState("");
   const [activeTab, setActiveTab] = useState<"columns" | "compare" | "ddl">("columns");
   const [compareTargetId, setCompareTargetId] = useState<string | null>(null);
+  // Rows whose detailed metadata panel (Identity / Constraints / Lineage) is
+  // expanded. Empty by default so the grid stays compact — details are opt-in
+  // per row via the "Details" toggle.
+  const [expandedDetailIds, setExpandedDetailIds] = useState<Set<string>>(new Set());
   const [propsExpanded, setPropsExpanded] = useState(true);
 
   /* Reset working state every time a new submission is loaded so a previous
@@ -293,6 +274,7 @@ export const ReviewDrawer: React.FC = () => {
     setRejectReason("");
     setDdlExpanded(true);
     setDdlFullScreen(false);
+    setExpandedDetailIds(new Set());
     setPropsExpanded(true);
   }, [reviewingNotification?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -511,6 +493,15 @@ export const ReviewDrawer: React.FC = () => {
 
   const toggleSelected = (colId: string) => {
     setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(colId)) next.delete(colId);
+      else next.add(colId);
+      return next;
+    });
+  };
+
+  const toggleDetails = (colId: string) => {
+    setExpandedDetailIds((prev) => {
       const next = new Set(prev);
       if (next.has(colId)) next.delete(colId);
       else next.add(colId);
@@ -889,15 +880,22 @@ export const ReviewDrawer: React.FC = () => {
                   </div>
                 </div>
 
-                {/* Table — one row per column. Every attribute lives in a
-                    single "Column & Attributes" cell; the trailing Actions
-                    column carries Edit / Compare / Approve / Reject. */}
+                {/* Grid — a compact, read-only mirror of the Column Management
+                    table so the architect reviews the exact same columns the
+                    submitter edited (same COLUMN_FIELDS order/labels). Detailed
+                    metadata (Identity / Constraints & Storage / Lineage) stays
+                    hidden behind the per-row "Details" toggle. The sticky right
+                    column keeps Decision/Actions reachable while the grid
+                    scrolls horizontally. */}
                 <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
-                  <div className="max-h-[60vh] overflow-auto">
-                    <table className="w-full text-sm">
-                      <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500 sticky top-0 z-10">
-                        <tr>
-                          <th className="px-3 py-2 text-left w-8">
+                  <div className="overflow-auto max-h-[60vh]">
+                    <table className="border-collapse text-xs">
+                      <thead>
+                        <tr className="bg-slate-50 border-b border-slate-200">
+                          <th
+                            className="sticky top-0 z-10 bg-slate-50 px-3 py-2.5 text-left border-b border-slate-200"
+                            style={{ width: 36 }}
+                          >
                             <input
                               type="checkbox"
                               checked={
@@ -910,132 +908,208 @@ export const ReviewDrawer: React.FC = () => {
                               aria-label="Select all visible"
                             />
                           </th>
-                          <th className="px-3 py-2 text-left">Column &amp; Attributes</th>
-                          <th className="px-3 py-2 text-right w-40">Actions</th>
+                          <th
+                            className="sticky top-0 z-10 bg-slate-50 px-1 py-2.5 border-b border-slate-200"
+                            style={{ width: 32 }}
+                            aria-label="Details"
+                          />
+                          <th
+                            className="sticky top-0 z-10 bg-slate-50 px-3 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide border-b border-slate-200"
+                            style={{ width: 40 }}
+                          >
+                            #
+                          </th>
+                          {COLUMN_FIELDS.map((f) => (
+                            <th
+                              key={f.key}
+                              className="sticky top-0 z-10 bg-slate-50 text-left px-3 py-2.5 text-xs font-semibold text-slate-500 uppercase tracking-wide whitespace-nowrap border-b border-slate-200"
+                              style={{ minWidth: f.width, width: f.width }}
+                            >
+                              {f.label}
+                            </th>
+                          ))}
+                          <th
+                            className="sticky top-0 right-0 z-20 bg-slate-50 px-3 py-2.5 text-right text-xs font-semibold text-slate-500 uppercase tracking-wide border-b border-l border-slate-200"
+                            style={{ minWidth: 168 }}
+                          >
+                            Decision / Actions
+                          </th>
                         </tr>
                       </thead>
                       <tbody>
                         {filteredColumns.length === 0 && (
                           <tr>
-                            <td colSpan={3} className="px-4 py-10 text-center text-sm text-slate-400">
+                            <td
+                              colSpan={COLUMN_FIELDS.length + 4}
+                              className="px-4 py-10 text-center text-sm text-slate-400"
+                            >
                               No columns match the current search/filter.
                             </td>
                           </tr>
                         )}
-                        {filteredColumns.map((col) => {
+                        {filteredColumns.map((col, rowIdx) => {
                           const isEditing = editingId === col.id;
                           const dec = decisions[col.id]?.decision || null;
                           const cmt = decisions[col.id]?.comment || "";
                           const selected = selectedIds.has(col.id);
                           const focused = focusedColumnId === col.id;
+                          const expanded = expandedDetailIds.has(col.id);
                           return (
-                            <tr
-                              key={col.id}
-                              className={`border-t border-slate-100 ${actionRowAccent[col.action]} ${
-                                selected ? "bg-indigo-50/40" : focused ? "bg-yellow-50/40" : ""
-                              }`}
-                            >
-                              <td className="px-3 py-3 align-top">
-                                <input
-                                  type="checkbox"
-                                  checked={selected}
-                                  onChange={() => toggleSelected(col.id)}
-                                  aria-label={`Select ${col.columnName}`}
-                                />
-                              </td>
-                              <td className="px-3 py-3 align-top">
-                                {/* Header: name + change type + per-column decision */}
-                                <div className="flex items-center flex-wrap gap-2 mb-2">
+                            <React.Fragment key={col.id}>
+                              <tr
+                                className={`border-b border-slate-50 hover:bg-slate-50/40 ${actionRowAccent[col.action]} ${
+                                  selected ? "bg-indigo-50/40" : focused ? "bg-yellow-50/40" : ""
+                                }`}
+                              >
+                                <td className="px-3 py-1.5 align-middle">
+                                  <input
+                                    type="checkbox"
+                                    checked={selected}
+                                    onChange={() => toggleSelected(col.id)}
+                                    aria-label={`Select ${col.columnName}`}
+                                  />
+                                </td>
+                                <td className="px-1 py-1.5 align-middle text-center">
                                   <button
-                                    onClick={() => setFocusedColumnId(col.id)}
-                                    className="font-mono text-sm font-semibold text-slate-800 hover:text-indigo-700 hover:underline"
-                                    title="Highlight related DDL"
+                                    type="button"
+                                    onClick={() => toggleDetails(col.id)}
+                                    className="w-6 h-6 inline-flex items-center justify-center rounded text-slate-500 hover:text-slate-700 hover:bg-slate-100"
+                                    aria-label={expanded ? "Hide details" : "View details"}
+                                    aria-expanded={expanded}
+                                    title={expanded ? "Hide details" : "View details"}
                                   >
-                                    {col.columnName || "—"}
+                                    <svg
+                                      className={`w-4 h-4 transition-transform ${expanded ? "rotate-90" : ""}`}
+                                      fill="none"
+                                      viewBox="0 0 24 24"
+                                      stroke="currentColor"
+                                    >
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                                    </svg>
                                   </button>
-                                  <Badge variant={actionBadgeVariant[col.action]}>{col.action}</Badge>
-                                  {dec && (
-                                    <span
-                                      className={`inline-block text-xs font-medium px-2 py-0.5 rounded border ${decisionTone[dec]}`}
-                                    >
-                                      {dec === "approved" ? "Approved" : "Rejected"}
-                                    </span>
+                                </td>
+                                <td className="px-3 py-1.5 text-slate-400 align-middle">{rowIdx + 1}</td>
+                                {COLUMN_FIELDS.map((f) => (
+                                  <td
+                                    key={f.key}
+                                    className={`px-3 py-1.5 align-middle ${f.kind === "checkbox" ? "text-center" : ""}`}
+                                    style={{ minWidth: f.width, width: f.width }}
+                                  >
+                                    {isEditing ? (
+                                      <ReviewEditCell field={f} draft={editDraft!} setDraft={setEditDraft} />
+                                    ) : (
+                                      <ReviewReadCell
+                                        field={f}
+                                        col={col}
+                                        onFocus={
+                                          f.key === "columnName"
+                                            ? () => setFocusedColumnId(col.id)
+                                            : undefined
+                                        }
+                                      />
+                                    )}
+                                  </td>
+                                ))}
+                                <td className="sticky right-0 z-10 bg-white px-3 py-1.5 align-middle border-l border-slate-200">
+                                  {isEditing ? (
+                                    <div className="flex items-center justify-end gap-1.5">
+                                      <Button size="sm" variant="ghost" onClick={cancelEdit}>
+                                        Cancel
+                                      </Button>
+                                      <Button size="sm" variant="primary" onClick={saveEditLocally}>
+                                        Save
+                                      </Button>
+                                    </div>
+                                  ) : (
+                                    <div className="flex items-center justify-end gap-1">
+                                      {dec && (
+                                        <span
+                                          className={`text-[10px] font-medium px-1.5 py-0.5 rounded border ${decisionTone[dec]}`}
+                                        >
+                                          {dec === "approved" ? "Approved" : "Rejected"}
+                                        </span>
+                                      )}
+                                      <button
+                                        onClick={() => {
+                                          setActiveTab("compare");
+                                          setCompareTargetId(col.id);
+                                        }}
+                                        className="text-[11px] px-1.5 py-1 rounded text-slate-600 hover:bg-slate-100"
+                                        title="Compare old vs new"
+                                      >
+                                        Compare
+                                      </button>
+                                      <button
+                                        onClick={() => startEdit(col)}
+                                        className="text-[11px] px-1.5 py-1 rounded text-slate-600 hover:bg-slate-100"
+                                        title="Edit column"
+                                      >
+                                        Edit
+                                      </button>
+                                      <button
+                                        onClick={() =>
+                                          setRowDecision(col.id, dec === "approved" ? null : "approved")
+                                        }
+                                        className={`w-6 h-6 inline-flex items-center justify-center rounded text-sm ${
+                                          dec === "approved"
+                                            ? "bg-emerald-100 text-emerald-700"
+                                            : "text-emerald-700 hover:bg-emerald-50"
+                                        }`}
+                                        title="Approve column"
+                                        aria-pressed={dec === "approved"}
+                                      >
+                                        ✓
+                                      </button>
+                                      <button
+                                        onClick={() =>
+                                          setRowDecision(col.id, dec === "rejected" ? null : "rejected")
+                                        }
+                                        className={`w-6 h-6 inline-flex items-center justify-center rounded text-sm ${
+                                          dec === "rejected"
+                                            ? "bg-red-100 text-red-700"
+                                            : "text-red-700 hover:bg-red-50"
+                                        }`}
+                                        title="Reject column"
+                                        aria-pressed={dec === "rejected"}
+                                      >
+                                        ✕
+                                      </button>
+                                    </div>
                                   )}
-                                </div>
-
-                                {isEditing ? (
-                                  <ColumnEditForm draft={editDraft!} setDraft={setEditDraft} />
-                                ) : (
-                                  <FullAttributesPanel column={col} />
-                                )}
-
-                                {isEditing && editError && (
-                                  <p className="text-xs text-red-600 mt-2">{editError}</p>
-                                )}
-
-                                {!isEditing && (cmt || dec) && (
-                                  <div className="flex items-start gap-2 mt-2">
-                                    <span className="text-[11px] text-slate-400 uppercase tracking-wide pt-1.5">
-                                      Comment
-                                    </span>
-                                    <input
-                                      value={cmt}
-                                      onChange={(e) => setRowComment(col.id, e.target.value)}
-                                      placeholder="Add a comment for this column…"
-                                      className="flex-1 text-xs px-2 py-1 border border-slate-200 rounded focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                                    />
-                                  </div>
-                                )}
-                              </td>
-                              <td className="px-3 py-3 align-top">
-                                {isEditing ? (
-                                  <div className="flex flex-col items-stretch gap-1.5 w-32 ml-auto">
-                                    <Button size="sm" variant="primary" onClick={saveEditLocally}>
-                                      Save
-                                    </Button>
-                                    <Button size="sm" variant="ghost" onClick={cancelEdit}>
-                                      Cancel
-                                    </Button>
-                                  </div>
-                                ) : (
-                                  <div className="flex flex-col items-stretch gap-1.5 w-32 ml-auto">
-                                    <Button size="sm" variant="outline" onClick={() => startEdit(col)}>
-                                      Edit
-                                    </Button>
-                                    <Button
-                                      size="sm"
-                                      variant="ghost"
-                                      onClick={() => {
-                                        setActiveTab("compare");
-                                        setCompareTargetId(col.id);
-                                      }}
-                                    >
-                                      Compare
-                                    </Button>
-                                    <Button
-                                      size="sm"
-                                      variant={dec === "approved" ? "primary" : "outline"}
-                                      onClick={() =>
-                                        setRowDecision(col.id, dec === "approved" ? null : "approved")
-                                      }
-                                      title="Mark column approved"
-                                    >
-                                      {dec === "approved" ? "Approved ✓" : "Approve"}
-                                    </Button>
-                                    <Button
-                                      size="sm"
-                                      variant={dec === "rejected" ? "danger" : "outline"}
-                                      onClick={() =>
-                                        setRowDecision(col.id, dec === "rejected" ? null : "rejected")
-                                      }
-                                      title="Mark column rejected"
-                                    >
-                                      {dec === "rejected" ? "Rejected ✕" : "Reject"}
-                                    </Button>
-                                  </div>
-                                )}
-                              </td>
-                            </tr>
+                                </td>
+                              </tr>
+                              {isEditing && editError && (
+                                <tr>
+                                  <td colSpan={COLUMN_FIELDS.length + 4} className="px-3 pb-2 pt-0">
+                                    <p className="text-xs text-red-600">{editError}</p>
+                                  </td>
+                                </tr>
+                              )}
+                              {expanded && !isEditing && (
+                                <tr className="bg-slate-50/60">
+                                  <td colSpan={COLUMN_FIELDS.length + 4} className="px-4 py-3">
+                                    <FullAttributesPanel column={col} />
+                                  </td>
+                                </tr>
+                              )}
+                              {!isEditing && (cmt || dec) && (
+                                <tr>
+                                  <td colSpan={COLUMN_FIELDS.length + 4} className="px-3 pb-2 pt-0">
+                                    <div className="flex items-start gap-2">
+                                      <span className="text-[11px] text-slate-400 uppercase tracking-wide pt-1.5">
+                                        Comment
+                                      </span>
+                                      <input
+                                        value={cmt}
+                                        onChange={(e) => setRowComment(col.id, e.target.value)}
+                                        placeholder="Add a comment for this column…"
+                                        className="flex-1 text-xs px-2 py-1 border border-slate-200 rounded focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                      />
+                                    </div>
+                                  </td>
+                                </tr>
+                              )}
+                            </React.Fragment>
                           );
                         })}
                       </tbody>
@@ -1244,88 +1318,110 @@ const renderAttrValue = (v: unknown): React.ReactNode => {
   return s;
 };
 
-// Inline edit form shown inside the single attributes cell while a row is
-// being edited. Mirrors the editable fields the old per-column inputs exposed.
-const ColumnEditForm: React.FC<{
+// Read-only grid cell — renders one COLUMN_FIELDS value for a submitted
+// column. Mirrors the Column Management grid so the architect sees the same
+// columns the submitter edited. `action` renders as a colored badge; checkbox
+// fields render a check / em-dash instead of a disabled box.
+const ReviewReadCell: React.FC<{
+  field: ColumnFieldSpec;
+  col: ColumnDefinition;
+  onFocus?: () => void;
+}> = ({ field, col, onFocus }) => {
+  if (field.key === "action") {
+    return <Badge variant={actionBadgeVariant[col.action]}>{col.action}</Badge>;
+  }
+  const v = field.get(col);
+  if (field.kind === "checkbox") {
+    return v ? (
+      <span className="inline-flex items-center justify-center w-4 h-4 rounded bg-emerald-100 text-emerald-700 text-[10px]">
+        ✓
+      </span>
+    ) : (
+      <span className="text-slate-300">—</span>
+    );
+  }
+  const s = String(v ?? "").trim();
+  if (!s) return <span className="text-slate-300">—</span>;
+  // Column Name doubles as the DDL cross-highlight trigger, matching the old
+  // review grid — click it to highlight the related DDL lines on the DDL tab.
+  if (field.key === "columnName" && onFocus) {
+    return (
+      <button
+        onClick={onFocus}
+        className="block truncate font-mono text-slate-800 hover:text-indigo-700 hover:underline text-left w-full"
+        title="Highlight related DDL"
+      >
+        {s}
+      </button>
+    );
+  }
+  return (
+    <span className="block truncate text-slate-700" title={s}>
+      {s}
+    </span>
+  );
+};
+
+// Editable grid cell — used while a row is in edit mode. Drives the shared
+// COLUMN_FIELDS get/set spec against the edit draft so the architect's inline
+// edits run through the exact same field logic (incl. column ↔ attribute name
+// regeneration) the submitter's grid uses.
+const ReviewEditCell: React.FC<{
+  field: ColumnFieldSpec;
   draft: ColumnDefinition;
   setDraft: React.Dispatch<React.SetStateAction<ColumnDefinition | null>>;
-}> = ({ draft, setDraft }) => {
-  const field =
-    "w-full px-2 py-1 text-sm border border-slate-200 rounded focus:outline-none focus:ring-2 focus:ring-indigo-500";
-  const label = "text-[11px] uppercase tracking-wide text-slate-400";
+}> = ({ field, draft, setDraft }) => {
+  const value = field.get(draft);
+  const commit = (v: string | number | boolean) =>
+    setDraft((d) => (d ? field.set(d, v) : d));
+  const cls =
+    "w-full bg-white px-2 py-1 text-xs text-slate-800 border border-slate-200 rounded focus:border-indigo-300 focus:ring-1 focus:ring-indigo-200 focus:outline-none";
+  if (field.kind === "checkbox") {
+    return (
+      <input
+        type="checkbox"
+        checked={!!value}
+        onChange={(e) => commit(e.target.checked)}
+        className="w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+        aria-label={field.label}
+      />
+    );
+  }
+  if (field.kind === "select") {
+    return (
+      <select
+        value={String(value)}
+        onChange={(e) => commit(e.target.value)}
+        className={cls}
+        aria-label={field.label}
+      >
+        {field.options!.map((o) => (
+          <option key={o.value} value={o.value}>
+            {o.label}
+          </option>
+        ))}
+      </select>
+    );
+  }
+  if (field.kind === "number") {
+    return (
+      <input
+        type="number"
+        value={value as number}
+        onChange={(e) => commit(Number(e.target.value) || 0)}
+        className={cls}
+        aria-label={field.label}
+      />
+    );
+  }
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 bg-slate-50/60 border border-slate-200 rounded-lg p-3">
-      <label className="flex flex-col gap-1">
-        <span className={label}>Column Name</span>
-        <input
-          className={field}
-          value={draft.columnName}
-          onChange={(e) => setDraft((d) => (d ? { ...d, columnName: e.target.value } : d))}
-        />
-      </label>
-      <label className="flex flex-col gap-1">
-        <span className={label}>Attribute Name</span>
-        <input
-          className={field}
-          value={draft.attributeName ?? ""}
-          onChange={(e) => setDraft((d) => (d ? { ...d, attributeName: e.target.value } : d))}
-        />
-      </label>
-      <label className="flex flex-col gap-1">
-        <span className={label}>Data Type</span>
-        <select
-          className={field}
-          value={draft.dataType}
-          onChange={(e) => setDraft((d) => (d ? { ...d, dataType: e.target.value } : d))}
-        >
-          {DATA_TYPE_OPTIONS.map((dt) => (
-            <option key={dt} value={dt}>
-              {dt}
-            </option>
-          ))}
-        </select>
-      </label>
-      <label className="flex flex-col gap-1">
-        <span className={label}>Default Value</span>
-        <input
-          className={field}
-          value={draft.defaultValue}
-          onChange={(e) => setDraft((d) => (d ? { ...d, defaultValue: e.target.value } : d))}
-        />
-      </label>
-      <label className="flex flex-col gap-1">
-        <span className={label}>Data Domain</span>
-        <input
-          className={field}
-          value={draft.dataDomain}
-          onChange={(e) => setDraft((d) => (d ? { ...d, dataDomain: e.target.value } : d))}
-        />
-      </label>
-      <label className="flex flex-col gap-1">
-        <span className={label}>Classification</span>
-        <select
-          className={field}
-          value={draft.dataClassification}
-          onChange={(e) =>
-            setDraft((d) => (d ? { ...d, dataClassification: e.target.value as any } : d))
-          }
-        >
-          {CLASSIFICATION_OPTIONS.map((opt) => (
-            <option key={opt} value={opt}>
-              {opt}
-            </option>
-          ))}
-        </select>
-      </label>
-      <label className="flex items-center gap-2 sm:col-span-2 lg:col-span-3">
-        <input
-          type="checkbox"
-          checked={draft.isNullable}
-          onChange={(e) => setDraft((d) => (d ? { ...d, isNullable: e.target.checked } : d))}
-        />
-        <span className="text-xs text-slate-600">Nullable</span>
-      </label>
-    </div>
+    <input
+      type="text"
+      value={String(value)}
+      onChange={(e) => commit(e.target.value)}
+      className={cls}
+      aria-label={field.label}
+    />
   );
 };
 
