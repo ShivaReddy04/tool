@@ -277,13 +277,13 @@ export const handleReviewAndSync = async (req: Request, res: Response): Promise<
       const tableDef = await getTableDefinitionDetails(reviewedSubmission.table_id);
       if (!tableDef) throw new HttpError(404, 'Table definition not found');
 
-      // Drive the apply step from the submission snapshot — that is what was
-      // approved, regardless of subsequent edits. Fall back to current state
-      // for legacy submissions that pre-date the payload column.
+      // Drive the apply step from the CURRENT table_definition columns. The
+      // architect may edit columns during review (persisted to table_definition
+      // before approval), so the live columns — not the original submission
+      // snapshot — are what was approved, and they match what commitColumnActions
+      // commits below.
       const snapshotColumns: DDLColumn[] =
-        Array.isArray(reviewedSubmission.payload?.columns) && reviewedSubmission.payload!.columns.length > 0
-          ? (reviewedSubmission.payload!.columns as DDLColumn[])
-          : ((await getColumnDefinitionsByTableId(reviewedSubmission.table_id)) as unknown as DDLColumn[]);
+        (await getColumnDefinitionsByTableId(reviewedSubmission.table_id)) as unknown as DDLColumn[];
 
       const connInfo = await getClusterConnectionConfig(tableDef.connection_id);
       if (!connInfo) throw new HttpError(404, 'Connection configuration not found');
