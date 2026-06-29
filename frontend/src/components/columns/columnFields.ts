@@ -1,7 +1,9 @@
 import type { ColumnDefinition, DataClassification } from "../../types";
 import {
-  generateTableName,
-  generateEntityLogicalName,
+    generateTableName,
+    generateEntityLogicalName,
+    generateColumnName,
+    generateAttributeName
 } from "../../utils/abbreviations";
 
 export type CellKind = "text" | "number" | "select" | "checkbox";
@@ -87,7 +89,7 @@ export const COLUMN_FIELDS: ColumnFieldSpec[] = [
         ...c,
         attributeName: attr,
         // Continuous physical name: drop the separators between abbreviations.
-        columnName: generateTableName(attr).replace(/_/g, ""),
+        columnName: generateColumnName(attr),
       };
     },
   },
@@ -105,8 +107,8 @@ export const COLUMN_FIELDS: ColumnFieldSpec[] = [
       const raw = String(v);
       return {
         ...c,
-        columnName: raw.replace(/[\s_]+/g, ""),
-        attributeName: generateEntityLogicalName(raw),
+        columnName: generateColumnName(raw),
+        attributeName: generateAttributeName(raw),
       };
     },
   },
