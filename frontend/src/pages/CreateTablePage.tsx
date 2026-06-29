@@ -180,12 +180,48 @@ export const CreateTablePage: React.FC = () => {
   }, []);
 
   const handleTableNameChange = useCallback((raw: string) => {
-    // Table Name is a single continuous identifier — no spaces, no underscores.
-    // Keep the entity logical name unchanged while updating the physical table name.
     const compact = raw.replace(/[\s_]+/g, "");
+
+    const ABBREVIATIONS: Record<string, string> = {
+      emp: "Employee",
+      sls: "Sales",
+      fct: "Fact",
+      tbl: "Table",
+      cust: "Customer",
+      dim: "Dimension",
+      addr: "Address",
+      txn: "Transaction",
+      qty: "Quantity",
+      amt: "Amount",
+    };
+
+    const keys = Object.keys(ABBREVIATIONS).sort((a, b) => b.length - a.length);
+
+    let remaining = compact.toLowerCase();
+    const words: string[] = [];
+
+    while (remaining.length > 0) {
+      let matched = false;
+
+      for (const key of keys) {
+        if (remaining.startsWith(key)) {
+          words.push(ABBREVIATIONS[key]);
+          remaining = remaining.slice(key.length);
+          matched = true;
+          break;
+        }
+      }
+
+      if (!matched) {
+        words.push(remaining.charAt(0).toUpperCase() + remaining.slice(1));
+        break;
+      }
+    }
+
     setFormData((prev) => ({
       ...prev,
       tableName: compact,
+      entityLogicalName: words.join(" "),
     }));
   }, []);
 
