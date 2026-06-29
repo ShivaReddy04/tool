@@ -125,8 +125,9 @@ export function generateEntityLogicalName(name: string): string {
     .replace(/\s+/g, "")
     .toLowerCase();
 
-  const abbreviations = [...abbrevMap.entries()]
-    .sort((a, b) => b[0].length - a[0].length);
+  const abbreviations = Array.from(abbrevMap.entries()).sort(
+  (a, b) => b[0].length - a[0].length
+);
 
   let remaining = input;
 
