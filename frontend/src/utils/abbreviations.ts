@@ -1,13 +1,8 @@
 /**
- * Frontend mirror of `backend/src/utils/abbreviations.ts`.
- *
- * The default dictionary ships with the bundle so the Create Table drawer
- * has instant offline UX. On app load the drawer calls GET /api/abbreviations
- * once and replaces the dictionary if the backend has overrides — the UI
- * stays in sync without redeploying the frontend.
- *
- * Keep the algorithm here byte-for-byte equivalent to the backend so a
- * server-rendered preview never disagrees with what the user sees inline.
+ * Shared abbreviation engine
+ * Used for:
+ *  - Entity Logical Name <-> Table Name
+ *  - Attribute Name <-> Column Name
  */
 
 export interface AbbreviationEntry {
@@ -27,97 +22,158 @@ const DEFAULT_DICTIONARY: AbbreviationEntry[] = [
   { full: "Calendar", abbreviation: "Cal" },
   { full: "Dimension", abbreviation: "Dim" },
   { full: "Fact", abbreviation: "Fct" },
+  { full: "Table", abbreviation: "Tbl" },
+  { full: "Customer", abbreviation: "Cust" },
+  { full: "Product", abbreviation: "Prd" },
+  { full: "Address", abbreviation: "Addr" },
+  { full: "Department", abbreviation: "Dept" },
   { full: "Cancel", abbreviation: "Cncl" },
   { full: "Connect", abbreviation: "Conn" },
-  { full: "Department", abbreviation: "Dept" },
-  { full: "Surrogate Key", abbreviation: "SK" },
   { full: "Primary Key", abbreviation: "PK" },
+  { full: "Surrogate Key", abbreviation: "SK" },
 ];
 
 let dictionary: AbbreviationEntry[] = [...DEFAULT_DICTIONARY];
-let fullToAbbrev = new Map<string, string>();
-let abbrevToFull = new Map<string, string>();
-let multiWordEntries: AbbreviationEntry[] = [];
 
-const rebuildIndexes = () => {
-  fullToAbbrev = new Map();
-  abbrevToFull = new Map();
-  multiWordEntries = [];
-  for (const entry of dictionary) {
-    fullToAbbrev.set(entry.full.toLowerCase(), entry.abbreviation);
-    abbrevToFull.set(entry.abbreviation.toLowerCase(), entry.full);
-    if (entry.full.includes(" ")) multiWordEntries.push(entry);
-  }
-  multiWordEntries.sort((a, b) => b.full.length - a.full.length);
-};
+let fullMap = new Map<string, string>();
+let abbrevMap = new Map<string, string>();
+
+function rebuildIndexes() {
+  fullMap.clear();
+  abbrevMap.clear();
+
+  dictionary.forEach((item) => {
+    fullMap.set(item.full.toLowerCase(), item.abbreviation.toLowerCase());
+    abbrevMap.set(item.abbreviation.toLowerCase(), item.full);
+  });
+}
+
 rebuildIndexes();
 
-export const setAbbreviationDictionary = (entries: AbbreviationEntry[]): void => {
-  dictionary = entries
-    .filter((e) => e && e.full && e.abbreviation)
-    .map((e) => ({ full: e.full.trim(), abbreviation: e.abbreviation.trim() }));
+export function setAbbreviationDictionary(entries: AbbreviationEntry[]) {
+  if (!entries || entries.length === 0) return;
+
+  dictionary = entries.map((e) => ({
+    full: e.full.trim(),
+    abbreviation: e.abbreviation.trim(),
+  }));
+
   rebuildIndexes();
-};
+}
 
-const firstThreeLettersAbbrev = (word: string): string => {
-  const letters = word.replace(/[^A-Za-z]/g, "");
-  if (!letters) return word.replace(/[^A-Za-z0-9]/g, "");
-  const head = letters.slice(0, 3);
-  return head.charAt(0).toUpperCase() + head.slice(1).toLowerCase();
-};
+function firstThree(word: string) {
+  const clean = word.replace(/[^A-Za-z0-9]/g, "");
 
-/**
- * "Employee Sales Fact"            -> "Emp_Sls_Fct"
- * "Primary Key Identifier"         -> "PK_Id"
- * "Lookup Reference Table"         -> "Loo_Ref_Tab"   (unknown words → first 3 letters)
- */
-export const generateTableName = (entityLogicalName: string): string => {
-  if (!entityLogicalName) return "";
-  let remaining = entityLogicalName.trim().replace(/\s+/g, " ");
-  if (!remaining) return "";
+  if (clean.length <= 3)
+    return clean.toLowerCase();
 
-  const tokens: string[] = [];
+  return clean.substring(0, 3).toLowerCase();
+}
 
-  outer: while (remaining.length > 0) {
-    for (const entry of multiWordEntries) {
-      const phraseLen = entry.full.length;
-      if (
-        remaining.length >= phraseLen &&
-        remaining.slice(0, phraseLen).toLowerCase() === entry.full.toLowerCase() &&
-        (remaining.length === phraseLen || remaining[phraseLen] === " ")
-      ) {
-        tokens.push(entry.abbreviation);
-        remaining = remaining.slice(phraseLen).trimStart();
-        continue outer;
+/*----------------------------------------------------
+  Employee Sales Fact Table
+  ->
+  empslsfcttbl
+----------------------------------------------------*/
+export function generateTableName(name: string): string {
+  if (!name) return "";
+
+  const words = name
+    .trim()
+    .replace(/\s+/g, " ")
+    .split(" ");
+
+  let result = "";
+
+  let i = 0;
+
+  while (i < words.length) {
+    // try 2-word abbreviation first
+    if (i + 1 < words.length) {
+      const two = `${words[i]} ${words[i + 1]}`.toLowerCase();
+
+      if (fullMap.has(two)) {
+        result += fullMap.get(two);
+        i += 2;
+        continue;
       }
     }
-    const spaceIdx = remaining.indexOf(" ");
-    const word = spaceIdx === -1 ? remaining : remaining.slice(0, spaceIdx);
-    remaining = spaceIdx === -1 ? "" : remaining.slice(spaceIdx + 1);
-    const abbrev = fullToAbbrev.get(word.toLowerCase());
-    tokens.push(abbrev ?? firstThreeLettersAbbrev(word));
+
+    const one = words[i].toLowerCase();
+
+    if (fullMap.has(one))
+      result += fullMap.get(one);
+    else
+      result += firstThree(one);
+
+    i++;
   }
 
-  return tokens
-    .map((t) => t.replace(/[^A-Za-z0-9]/g, ""))
-    .filter(Boolean)
-    .join("_");
-};
+  return result.toLowerCase();
+}
 
-/**
- * "Emp_Sls_Fct"                    -> "Employee Sales Fact"
- * "PK_Id"                          -> "Primary Key Identifier"
- * "report_2024"                    -> "Report 2024"               (unknown tokens title-cased)
- */
-export const generateEntityLogicalName = (tableName: string): string => {
-  if (!tableName) return "";
-  const tokens = tableName.trim().split(/[_\s]+/).filter(Boolean);
-  if (tokens.length === 0) return "";
-  return tokens
-    .map((token) => {
-      const full = abbrevToFull.get(token.toLowerCase());
-      if (full) return full;
-      return token.charAt(0).toUpperCase() + token.slice(1).toLowerCase();
-    })
-    .join(" ");
-};
+/*----------------------------------------------------
+  empslsfcttbl
+  ->
+  Employee Sales Fact Table
+----------------------------------------------------*/
+export function generateEntityLogicalName(name: string): string {
+  if (!name) return "";
+
+  const input = name
+    .replace(/_/g, "")
+    .replace(/\s+/g, "")
+    .toLowerCase();
+
+  const abbreviations = [...abbrevMap.entries()]
+    .sort((a, b) => b[0].length - a[0].length);
+
+  let remaining = input;
+
+  const words: string[] = [];
+
+  while (remaining.length > 0) {
+
+    let matched = false;
+
+    for (const [abbr, full] of abbreviations) {
+
+      if (remaining.startsWith(abbr)) {
+
+        words.push(full);
+
+        remaining = remaining.substring(abbr.length);
+
+        matched = true;
+
+        break;
+      }
+    }
+
+    if (!matched) {
+
+      words.push(
+        remaining.charAt(0).toUpperCase() +
+        remaining.substring(1)
+      );
+
+      break;
+    }
+  }
+
+  return words.join(" ");
+}
+
+/*----------------------------------------------------
+ Attribute Name -> Column Name
+----------------------------------------------------*/
+export function generateColumnName(attribute: string) {
+  return generateTableName(attribute);
+}
+
+/*----------------------------------------------------
+ Column Name -> Attribute Name
+----------------------------------------------------*/
+export function generateAttributeName(column: string) {
+  return generateEntityLogicalName(column);
+}
