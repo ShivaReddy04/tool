@@ -222,7 +222,6 @@ export const TablePropertiesPanel: React.FC = () => {
               const raw = e.target.value;
               updateDraft({
                 tableName: raw.replace(/[\s_]+/g, ""),
-                entityLogicalName: generateEntityLogicalName(raw),
               });
             }}
             required

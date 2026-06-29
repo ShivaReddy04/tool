@@ -181,13 +181,11 @@ export const CreateTablePage: React.FC = () => {
 
   const handleTableNameChange = useCallback((raw: string) => {
     // Table Name is a single continuous identifier — no spaces, no underscores.
-    // Strip both for the stored name, but derive the human-readable Entity
-    // Logical Name from the raw input (which may still carry separators) first.
+    // Keep the entity logical name unchanged while updating the physical table name.
     const compact = raw.replace(/[\s_]+/g, "");
     setFormData((prev) => ({
       ...prev,
       tableName: compact,
-      entityLogicalName: generateEntityLogicalName(raw),
     }));
   }, []);
 
