@@ -102,7 +102,20 @@ const EditableCell: React.FC<EditableCellProps> = ({ field, col, isDuplicate, de
 };
 
 export const ColumnDataGrid: React.FC = () => {
-  const { columns, updateColumn, addColumn, submissionStatus } = useDashboard();
+  const { columns, updateColumn, addColumn, removeColumn, submissionStatus } = useDashboard();
+
+  // Deleting a column:
+  //  - a column that was never applied to the cluster (action 'Add') is
+  //    removed outright — nothing exists downstream to drop.
+  //  - an applied column ('No Change' / 'Modify') is marked 'Drop' so the
+  //    DROP COLUMN DDL runs only after an architect approves it.
+  const handleDeleteColumn = (col: ColumnDefinition) => {
+    if (col.action === "Add") {
+      removeColumn(col.id);
+    } else {
+      updateColumn(col.id, { action: "Drop" });
+    }
+  };
   const [searchTerm, setSearchTerm] = useState("");
 
   // A column whose action is anything other than 'No Change' exists only in
@@ -233,6 +246,10 @@ export const ColumnDataGrid: React.FC = () => {
                   {f.label}
                 </th>
               ))}
+              <th
+                className="sticky top-0 z-10 bg-slate-50 px-3 py-2.5 border-b border-slate-200"
+                style={{ minWidth: 60, width: 60 }}
+              />
             </tr>
           </thead>
           <tbody>
@@ -266,6 +283,33 @@ export const ColumnDataGrid: React.FC = () => {
                       </td>
                     );
                   })}
+                  <td className="px-2 py-1.5 text-center align-middle">
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteColumn(col)}
+                      className="text-slate-400 hover:text-red-500 transition-colors"
+                      aria-label={`Delete column ${col.columnName || rowIdx + 1}`}
+                      title={
+                        col.action === "Add"
+                          ? "Remove this column"
+                          : "Mark this column to be dropped (applied on approval)"
+                      }
+                    >
+                      <svg
+                        className="w-4 h-4 inline"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                        stroke="currentColor"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M6 18L18 6M6 6l12 12"
+                        />
+                      </svg>
+                    </button>
+                  </td>
                 </tr>
               );
             })}

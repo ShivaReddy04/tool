@@ -96,6 +96,7 @@ interface DashboardContextType {
   setSelectedColumnId: (id: string) => void;
   updateColumn: (id: string, updates: Partial<ColumnDefinition>) => void;
   addColumn: () => void;
+  removeColumn: (id: string) => void;
 
   // UI State
   steps: Step[];
@@ -1000,6 +1001,15 @@ const DashboardCoreProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     setHasUnsavedChanges(true);
   }, []);
 
+  // Hard-remove a column from local state. Only safe for columns that were
+  // never applied to the target cluster (action 'Add'); the caller in the
+  // grid decides between this and a 'Drop' action for already-applied columns.
+  const removeColumn = useCallback((id: string) => {
+    setColumns((prev) => prev.filter((col) => col.id !== id));
+    setSelectedColumnId((cur) => (cur === id ? "" : cur));
+    setHasUnsavedChanges(true);
+  }, []);
+
   const deleteTable = useCallback(
     async (
       id: string,
@@ -1133,6 +1143,7 @@ const DashboardCoreProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         setSelectedColumnId,
         updateColumn,
         addColumn,
+        removeColumn,
         steps,
         currentStep,
         setCurrentStep,
