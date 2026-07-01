@@ -42,6 +42,10 @@ const DEFAULT_DICTIONARY: AbbreviationEntry[] = [
     { full: 'Cancel', abbreviation: 'Cncl' },
     { full: 'Connect', abbreviation: 'Conn' },
     { full: 'Department', abbreviation: 'Dept' },
+    { full: 'Customer', abbreviation: 'Cust' },
+    { full: 'Product', abbreviation: 'Prd' },
+    { full: 'Address', abbreviation: 'Addr' },
+    { full: 'Table', abbreviation: 'Tbl' },
     { full: 'Surrogate Key', abbreviation: 'SK' },
     { full: 'Primary Key', abbreviation: 'PK' },
 ];

@@ -1,7 +1,5 @@
 import type { ColumnDefinition, DataClassification } from "../../types";
 import {
-    generateTableName,
-    generateEntityLogicalName,
     generateColumnName,
     generateAttributeName
 } from "../../utils/abbreviations";
@@ -76,7 +74,7 @@ export const COLUMN_FIELDS: ColumnFieldSpec[] = [
     // it was never persisted (older rows, columns discovered from the physical
     // schema), derive it from columnName on display so the cell is never blank
     // — the same expansion used when typing a column name regenerates it.
-    get: (c) => c.attributeName || generateEntityLogicalName(c.columnName),
+    get: (c) => c.attributeName || generateAttributeName(c.columnName),
     // Editing the attribute (human-readable) re-derives the physical column
     // name through the same abbreviation dictionary used for table metadata
     // (Table Name ↔ Entity Logical Name). This is bidirectional: changing
@@ -105,10 +103,17 @@ export const COLUMN_FIELDS: ColumnFieldSpec[] = [
       // underscores. Derive the human-readable Attribute Name from the raw
       // input (which may still carry separators) before compacting.
       const raw = String(v);
+
+      // Only auto-fill the Attribute Name while it is still empty or still
+      // in sync with the previous auto-derivation. Once the user has typed
+      // their own Attribute Name, editing the column must NOT clobber it.
+      const autoDerived = !c.attributeName ||
+        c.attributeName === generateAttributeName(c.columnName);
+
       return {
         ...c,
         columnName: generateColumnName(raw),
-        attributeName: generateAttributeName(raw),
+        attributeName: autoDerived ? generateAttributeName(raw) : c.attributeName,
       };
     },
   },
