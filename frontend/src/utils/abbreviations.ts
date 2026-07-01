@@ -167,9 +167,25 @@ export function generateEntityLogicalName(name: string): string {
 
 /*----------------------------------------------------
  Attribute Name -> Column Name
+ Abbreviates a human-readable attribute into a physical
+ identifier: "Employee Name" -> "empnm".
 ----------------------------------------------------*/
 export function generateColumnName(attribute: string) {
   return generateTableName(attribute);
+}
+
+/*----------------------------------------------------
+ Sanitize a physical column name the user typed directly
+ (e.g. "empnm", "emp_nm", "Employee Id"). Unlike
+ generateColumnName this does NOT abbreviate — it only
+ collapses to a single continuous identifier so the user
+ can type the physical name verbatim without it being
+ truncated by the abbreviation engine.
+   "emp_nm"      -> "empnm"
+   "Phone No"    -> "phoneno"
+----------------------------------------------------*/
+export function sanitizeColumnName(raw: string) {
+  return raw.replace(/[^A-Za-z0-9]/g, "").toLowerCase();
 }
 
 /*======================================================================

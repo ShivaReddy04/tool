@@ -1,7 +1,8 @@
 import type { ColumnDefinition, DataClassification } from "../../types";
 import {
     generateColumnName,
-    generateAttributeName
+    generateAttributeName,
+    sanitizeColumnName
 } from "../../utils/abbreviations";
 
 export type CellKind = "text" | "number" | "select" | "checkbox";
@@ -99,10 +100,13 @@ export const COLUMN_FIELDS: ColumnFieldSpec[] = [
     required: true,
     get: (c) => c.columnName,
     set: (c, v) => {
-      // Column Name is a single continuous identifier — strip spaces and
-      // underscores. Derive the human-readable Attribute Name from the raw
-      // input (which may still carry separators) before compacting.
+      // The user types the PHYSICAL column name here (e.g. "empnm"). Keep it
+      // verbatim as a single continuous identifier — only strip separators.
+      // Do NOT run it through the abbreviation engine (generateColumnName),
+      // which would truncate unknown words to three letters ("empnm" -> "emp")
+      // and make the field impossible to type into.
       const raw = String(v);
+      const columnName = sanitizeColumnName(raw);
 
       // Only auto-fill the Attribute Name while it is still empty or still
       // in sync with the previous auto-derivation. Once the user has typed
@@ -112,8 +116,8 @@ export const COLUMN_FIELDS: ColumnFieldSpec[] = [
 
       return {
         ...c,
-        columnName: generateColumnName(raw),
-        attributeName: autoDerived ? generateAttributeName(raw) : c.attributeName,
+        columnName,
+        attributeName: autoDerived ? generateAttributeName(columnName) : c.attributeName,
       };
     },
   },
