@@ -19,19 +19,27 @@ describe('buildCreateTableDDL', () => {
   it('quotes identifiers with double quotes on postgresql', () => {
     const cols = [baseCol({ column_name: 'name', data_type: 'TEXT' })];
     const ddl = buildCreateTableDDL('postgresql', 'public', 'users', cols);
-    expect(ddl).toBe('CREATE TABLE "public"."users" ("name" TEXT)');
+    expect(ddl).toBe('CREATE TABLE IF NOT EXISTS "public"."users" ("name" TEXT)');
   });
 
   it('quotes identifiers with backticks on mysql', () => {
     const cols = [baseCol({ column_name: 'name', data_type: 'TEXT' })];
     const ddl = buildCreateTableDDL('mysql', 'app', 'users', cols);
-    expect(ddl).toBe('CREATE TABLE `app`.`users` (`name` TEXT)');
+    expect(ddl).toBe('CREATE TABLE IF NOT EXISTS `app`.`users` (`name` TEXT)');
   });
 
-  it('quotes identifiers with brackets on mssql', () => {
+  it('quotes identifiers with brackets on mssql (no IF NOT EXISTS — unsupported)', () => {
     const cols = [baseCol({ column_name: 'name', data_type: 'NVARCHAR(100)' })];
     const ddl = buildCreateTableDDL('mssql', 'dbo', 'users', cols);
     expect(ddl).toBe('CREATE TABLE [dbo].[users] ([name] NVARCHAR(100))');
+  });
+
+  it('emits CREATE TABLE IF NOT EXISTS where the dialect supports it', () => {
+    const cols = [baseCol({ column_name: 'name', data_type: 'TEXT' })];
+    expect(buildCreateTableDDL('postgresql', 'public', 't', cols)).toContain('CREATE TABLE IF NOT EXISTS');
+    expect(buildCreateTableDDL('redshift', 'public', 't', cols)).toContain('CREATE TABLE IF NOT EXISTS');
+    expect(buildCreateTableDDL('mysql', 'app', 't', cols)).toContain('CREATE TABLE IF NOT EXISTS');
+    expect(buildCreateTableDDL('mssql', 'dbo', 't', cols)).not.toContain('IF NOT EXISTS');
   });
 
   it('escapes embedded quote characters per dialect', () => {
@@ -90,10 +98,42 @@ describe('buildAlterDDL', () => {
     const stmts = buildAlterDDL('postgresql', 'public', 't', cols);
     const addIdx = stmts.findIndex((s) => s.includes('ADD COLUMN'));
     const modIdx = stmts.findIndex((s) => s.includes('ALTER COLUMN "m" TYPE'));
-    const dropIdx = stmts.findIndex((s) => s.includes('DROP COLUMN "d"'));
+    const dropIdx = stmts.findIndex((s) => s.includes('DROP COLUMN') && s.includes('"d"'));
     expect(addIdx).toBeGreaterThanOrEqual(0);
     expect(modIdx).toBeGreaterThan(addIdx);
     expect(dropIdx).toBeGreaterThan(modIdx);
+  });
+
+  it('guards ADD / DROP COLUMN with IF [NOT] EXISTS on postgres for safe retries', () => {
+    const cols: DDLColumn[] = [
+      baseCol({ column_name: 'a', data_type: 'INT', action: 'Add' }),
+      baseCol({ column_name: 'd', data_type: 'INT', action: 'Drop' }),
+    ];
+    const stmts = buildAlterDDL('postgresql', 'public', 't', cols);
+    expect(stmts).toContain('ALTER TABLE "public"."t" ADD COLUMN IF NOT EXISTS "a" INT');
+    expect(stmts).toContain('ALTER TABLE "public"."t" DROP COLUMN IF EXISTS "d"');
+  });
+
+  it('omits ADD/DROP guards on redshift (clause unsupported)', () => {
+    const cols: DDLColumn[] = [
+      baseCol({ column_name: 'a', data_type: 'INT', action: 'Add' }),
+      baseCol({ column_name: 'd', data_type: 'INT', action: 'Drop' }),
+    ];
+    const stmts = buildAlterDDL('redshift', 'public', 't', cols);
+    expect(stmts).toContain('ALTER TABLE "public"."t" ADD COLUMN "a" INT');
+    expect(stmts).toContain('ALTER TABLE "public"."t" DROP COLUMN "d"');
+    expect(stmts.join('\n')).not.toContain('IF NOT EXISTS');
+    expect(stmts.join('\n')).not.toContain('IF EXISTS');
+  });
+
+  it('guards only DROP COLUMN on mssql (DROP IF EXISTS supported, ADD is not)', () => {
+    const cols: DDLColumn[] = [
+      baseCol({ column_name: 'a', data_type: 'INT', action: 'Add' }),
+      baseCol({ column_name: 'd', data_type: 'INT', action: 'Drop' }),
+    ];
+    const stmts = buildAlterDDL('mssql', 'dbo', 't', cols);
+    expect(stmts).toContain('ALTER TABLE [dbo].[t] ADD COLUMN [a] INT');
+    expect(stmts).toContain('ALTER TABLE [dbo].[t] DROP COLUMN IF EXISTS [d]');
   });
 
   it('expands a Modify on postgres into TYPE + NULL + DEFAULT statements', () => {

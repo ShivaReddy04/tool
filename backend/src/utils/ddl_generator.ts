@@ -22,6 +22,23 @@ export interface DDLColumn {
     is_sort_key?: boolean;
 }
 
+// Per-dialect support for idempotency guards. Emitting IF [NOT] EXISTS lets the
+// approval step be safely retried after a partial failure — e.g. the cluster
+// DDL push succeeded but the local bookkeeping transaction then rolled back, so
+// the same statements run again on retry. The clause is only added where the
+// engine actually accepts it: Redshift and MySQL reject IF [NOT] EXISTS on
+// ADD/DROP COLUMN, and MSSQL has no CREATE TABLE IF NOT EXISTS — those fall back
+// to the bare statement.
+const IDEMPOTENT_SUPPORT: Record<
+    DbType,
+    { createTable: boolean; addColumn: boolean; dropColumn: boolean }
+> = {
+    postgresql: { createTable: true, addColumn: true, dropColumn: true },
+    redshift: { createTable: true, addColumn: false, dropColumn: false },
+    mysql: { createTable: true, addColumn: false, dropColumn: false },
+    mssql: { createTable: false, addColumn: false, dropColumn: true },
+};
+
 function quoteIdent(dbType: DbType, ident: string): string {
     if (dbType === 'mysql') return `\`${ident.replace(/`/g, '``')}\``;
     if (dbType === 'mssql') return `[${ident.replace(/]/g, ']]')}]`;
@@ -63,7 +80,8 @@ export function buildCreateTableDDL(
         columnDefs.push(`PRIMARY KEY (${pkCols.join(', ')})`);
     }
 
-    let ddl = `CREATE TABLE ${qualified(dbType, schema, table)} (${columnDefs.join(', ')})`;
+    const ifNotExists = IDEMPOTENT_SUPPORT[dbType].createTable ? 'IF NOT EXISTS ' : '';
+    let ddl = `CREATE TABLE ${ifNotExists}${qualified(dbType, schema, table)} (${columnDefs.join(', ')})`;
 
     // DISTSTYLE / DISTKEY / SORTKEY are Redshift-only table attributes — other
     // engines reject them, so only append for redshift.
@@ -118,8 +136,9 @@ export function buildAlterDDL(
     const stmts: string[] = [];
 
     // Add
+    const addGuard = IDEMPOTENT_SUPPORT[dbType].addColumn ? 'IF NOT EXISTS ' : '';
     for (const c of columns.filter((x) => x.action === 'Add')) {
-        stmts.push(`ALTER TABLE ${target} ADD COLUMN ${colSpec(dbType, c)}`);
+        stmts.push(`ALTER TABLE ${target} ADD COLUMN ${addGuard}${colSpec(dbType, c)}`);
     }
 
     // Modify — dialect-specific
@@ -159,8 +178,9 @@ export function buildAlterDDL(
     }
 
     // Drop (last so dependent ALTER MODIFYs above still see the columns)
+    const dropGuard = IDEMPOTENT_SUPPORT[dbType].dropColumn ? 'IF EXISTS ' : '';
     for (const c of columns.filter((x) => x.action === 'Drop')) {
-        stmts.push(`ALTER TABLE ${target} DROP COLUMN ${quoteIdent(dbType, c.column_name)}`);
+        stmts.push(`ALTER TABLE ${target} DROP COLUMN ${dropGuard}${quoteIdent(dbType, c.column_name)}`);
     }
 
     return stmts;

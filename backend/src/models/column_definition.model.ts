@@ -165,9 +165,12 @@ export const getColumnDefinitionsByTableId = async (
  * every remaining column's action to 'No Change' so the next submission will
  * diff cleanly.
  */
-export const commitColumnActions = async (tableId: string): Promise<void> => {
-    await query(`DELETE FROM column_definitions WHERE table_id = $1 AND action = 'Drop'`, [tableId]);
-    await query(
+export const commitColumnActions = async (
+    tableId: string,
+    executor: Executor = defaultExecutor
+): Promise<void> => {
+    await executor.query(`DELETE FROM column_definitions WHERE table_id = $1 AND action = 'Drop'`, [tableId]);
+    await executor.query(
         `UPDATE column_definitions SET action = 'No Change', updated_at = CURRENT_TIMESTAMP WHERE table_id = $1`,
         [tableId]
     );

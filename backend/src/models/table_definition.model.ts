@@ -146,8 +146,12 @@ export const findTableDefinitionByPhysicalTarget = async (
     return result.rows[0] || null;
 };
 
-export const updateTableStatus = async (id: string, status: string): Promise<void> => {
-    await query('UPDATE table_definitions SET status = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2', [status, id]);
+export const updateTableStatus = async (
+    id: string,
+    status: string,
+    executor: Executor = defaultExecutor
+): Promise<void> => {
+    await executor.query('UPDATE table_definitions SET status = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2', [status, id]);
 };
 
 /**

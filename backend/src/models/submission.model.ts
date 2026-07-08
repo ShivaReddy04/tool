@@ -1,4 +1,4 @@
-import { query } from '../config/db';
+import { query, defaultExecutor, Executor } from '../config/db';
 
 export interface SubmissionPayload {
     table: any;
@@ -80,8 +80,14 @@ export const getSubmissionById = async (id: string): Promise<Submission | null> 
     return result.rows[0] || null;
 };
 
-export const reviewSubmission = async (id: string, reviewedBy: string, status: 'approved' | 'rejected', rejectionReason?: string): Promise<Submission> => {
-    const result = await query(
+export const reviewSubmission = async (
+    id: string,
+    reviewedBy: string,
+    status: 'approved' | 'rejected',
+    rejectionReason?: string,
+    executor: Executor = defaultExecutor
+): Promise<Submission> => {
+    const result = await executor.query(
         `UPDATE submissions SET reviewed_by = $1, status = $2, rejection_reason = $3, reviewed_at = CURRENT_TIMESTAMP WHERE id = $4 RETURNING *`,
         [reviewedBy, status, rejectionReason, id]
     );

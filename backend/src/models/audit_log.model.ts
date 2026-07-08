@@ -1,4 +1,4 @@
-import { query } from '../config/db';
+import { defaultExecutor, Executor } from '../config/db';
 
 export interface AuditLog {
     id?: string;
@@ -11,7 +11,10 @@ export interface AuditLog {
     created_at?: string;
 }
 
-export const createAuditLog = async (log: AuditLog): Promise<AuditLog> => {
+export const createAuditLog = async (
+    log: AuditLog,
+    executor: Executor = defaultExecutor
+): Promise<AuditLog> => {
     const q = `
     INSERT INTO audit_logs (action, entity_type, entity_id, user_id, user_name, metadata)
     VALUES ($1, $2, $3, $4, $5, $6)
@@ -26,6 +29,6 @@ export const createAuditLog = async (log: AuditLog): Promise<AuditLog> => {
         log.metadata ? JSON.stringify(log.metadata) : null,
     ];
 
-    const result = await query(q, values);
+    const result = await executor.query(q, values);
     return result.rows[0];
 };

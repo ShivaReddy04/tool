@@ -9,12 +9,23 @@ import { findUserById } from '../models/user.model';
 import { broadcastSubmissionEvent } from '../utils/webhook';
 import { buildCreateTableDDL, buildAlterDDL, hasPendingChanges, DbType, DDLColumn } from '../utils/ddl_generator';
 import { HttpError } from '../utils/httpError';
+import { withTransaction } from '../config/db';
 import type { SubmitForReviewInput, ReviewSubmissionInput } from '../schemas/submission';
 
 // Builds the same statement list that the apply step will run at approval
 // time. Shared by submit-time pre-flight and the approval handler so both
 // agree on exactly what DDL is being validated / executed.
-const computeApplyStatements = async (
+//
+// The ALTER branch reconciles the requested actions against the CURRENT cluster
+// columns: an Add whose column already exists, or a Drop whose column is already
+// gone, is dropped from the batch. This is what makes approval retry-safe on
+// EVERY dialect — not just the ones that accept ADD/DROP COLUMN IF [NOT] EXISTS
+// (only Postgres does for both). After a partial failure — cluster DDL applied
+// but the local bookkeeping transaction rolled back — the retry recomputes here
+// against the now-updated cluster and simply emits nothing for the parts already
+// applied. CREATE is guarded by the tableExists check above plus IF NOT EXISTS
+// where supported.
+export const computeApplyStatements = async (
   connector: any,
   dbType: DbType,
   config: any,
@@ -36,7 +47,25 @@ const computeApplyStatements = async (
     const create = buildCreateTableDDL(dbType, schemaName, tableName, columns, distStyle);
     if (create) statements.push(create);
   } else if (hasPendingChanges(columns)) {
-    statements.push(...buildAlterDDL(dbType, schemaName, tableName, columns));
+    let effectiveColumns = columns;
+    try {
+      const liveColumns: any[] = await connector.getColumns(config, schemaName, tableName);
+      const liveNames = new Set(
+        liveColumns.map((c) => (c.column_name || '').toLowerCase()),
+      );
+      effectiveColumns = columns.filter((c) => {
+        const name = (c.column_name || '').toLowerCase();
+        if (c.action === 'Add') return !liveNames.has(name); // already added → skip
+        if (c.action === 'Drop') return liveNames.has(name); // already gone → skip
+        return true; // Modify / No Change are idempotent — pass through
+      });
+    } catch (e: any) {
+      // Couldn't read live columns — fall back to the unreconciled batch (the
+      // IF [NOT] EXISTS guards still cover Postgres). Never block on a metadata
+      // read hiccup.
+      console.warn('[apply] column reconcile skipped (getColumns failed):', e?.message || e);
+    }
+    statements.push(...buildAlterDDL(dbType, schemaName, tableName, effectiveColumns));
   }
   return statements;
 };
@@ -250,69 +279,93 @@ export const handleReviewAndSync = async (req: Request, res: Response): Promise<
   const reviewerId = req.user?.userId;
   if (!reviewerId) throw new HttpError(401, 'Not authenticated');
 
+  // Load the submission up-front: its table_id drives the apply step, and (for
+  // architects) it's needed to authorize the action.
+  const existing = await getSubmissionById(id);
+  if (!existing) throw new HttpError(404, 'Submission not found');
+
   // Architects can only act on submissions assigned to them. Admins can act on
   // anything (e.g. to unblock when the assigned architect is OOO).
   const role = (req.user?.role || '').toLowerCase();
-  if (role === 'architect') {
-    const existing = await getSubmissionById(id);
-    if (!existing) throw new HttpError(404, 'Submission not found');
-    if (existing.assigned_architect_id !== reviewerId) {
-      throw new HttpError(403, 'This submission is assigned to a different architect');
-    }
+  if (role === 'architect' && existing.assigned_architect_id !== reviewerId) {
+    throw new HttpError(403, 'This submission is assigned to a different architect');
   }
 
-  const reviewedSubmission = await reviewSubmission(id, reviewerId, status, rejectionReason);
-  await updateTableStatus(reviewedSubmission.table_id, status);
-
-  await createAuditLog({
-    action: status === 'approved' ? 'APPROVE_SUBMISSION' : 'REJECT_SUBMISSION',
-    entity_type: 'submission',
-    entity_id: id,
-    user_name: reviewedByName || reviewerId,
-    metadata: { table_id: reviewedSubmission.table_id, reason: rejectionReason },
-  });
+  const tableId = existing.table_id;
+  let reviewedSubmission: Awaited<ReturnType<typeof reviewSubmission>>;
 
   if (status === 'approved') {
-    try {
-      const tableDef = await getTableDefinitionDetails(reviewedSubmission.table_id);
-      if (!tableDef) throw new HttpError(404, 'Table definition not found');
+    // Apply the DDL to the target cluster BEFORE recording the approval. If the
+    // push fails, nothing is marked approved — reviewSubmission never runs, so
+    // the submission stays 'pending' and the architect can fix the offending
+    // column and retry. (Previously the row was flipped to 'approved' first, so
+    // a failed push left an approved-but-not-applied submission that had also
+    // dropped out of the pending queue.)
+    const tableDef = await getTableDefinitionDetails(tableId);
+    if (!tableDef) throw new HttpError(404, 'Table definition not found');
 
-      // Drive the apply step from the CURRENT table_definition columns. The
-      // architect may edit columns during review (persisted to table_definition
-      // before approval), so the live columns — not the original submission
-      // snapshot — are what was approved, and they match what commitColumnActions
-      // commits below.
-      const snapshotColumns: DDLColumn[] =
-        (await getColumnDefinitionsByTableId(reviewedSubmission.table_id)) as unknown as DDLColumn[];
+    // Drive the apply step from the CURRENT table_definition columns. The
+    // architect may edit columns during review (persisted to table_definition
+    // before approval), so the live columns — not the original submission
+    // snapshot — are what gets applied and committed.
+    const snapshotColumns: DDLColumn[] =
+      (await getColumnDefinitionsByTableId(tableId)) as unknown as DDLColumn[];
 
-      const connInfo = await getClusterConnectionConfig(tableDef.connection_id);
-      if (!connInfo) throw new HttpError(404, 'Connection configuration not found');
+    const connInfo = await getClusterConnectionConfig(tableDef.connection_id);
+    if (!connInfo) throw new HttpError(404, 'Connection configuration not found');
 
-      const dbType = connInfo.cluster.db_type as DbType;
-      const connector = getConnector(dbType);
+    const dbType = connInfo.cluster.db_type as DbType;
+    const connector = getConnector(dbType);
 
-      const statements = await computeApplyStatements(
-        connector,
-        dbType,
-        connInfo.config,
-        tableDef.schema_name,
-        tableDef.table_name,
-        snapshotColumns,
-        (tableDef as any).distribution_style,
-      );
+    const statements = await computeApplyStatements(
+      connector,
+      dbType,
+      connInfo.config,
+      tableDef.schema_name,
+      tableDef.table_name,
+      snapshotColumns,
+      (tableDef as any).distribution_style,
+    );
 
-      if (statements.length > 0) {
-        console.log('[approval] Applying DDL to', connInfo.cluster.name, statements);
+    if (statements.length > 0) {
+      console.log('[approval] Applying DDL to', connInfo.cluster.name, statements);
+      try {
         await connector.runDDLBatch(connInfo.config, statements);
+      } catch (syncErr: any) {
+        // Push failed — leave the submission pending for retry. runDDLBatch
+        // attaches the failing statement so we can name the column that broke.
+        if (syncErr instanceof HttpError) throw syncErr;
+        throw new HttpError(
+          500,
+          'Schema push failed — submission left pending for retry.',
+          buildDDLErrorDetail(syncErr),
+          true,
+        );
       }
+    }
 
-      await commitColumnActions(reviewedSubmission.table_id);
-      await updateTableStatus(reviewedSubmission.table_id, 'applied');
+    // Push succeeded — now commit the decision, the column actions and the
+    // statuses in a single transaction so they can't land partially. Any
+    // failure here rolls all of them back, leaving the submission 'pending'
+    // (reviewSubmission is the write that removes it from the queue). The
+    // cluster DDL is already applied and can't be rolled back with these, so a
+    // retry re-runs the same idempotent-where-possible statements.
+    reviewedSubmission = await withTransaction(async (tx) => {
+      const reviewed = await reviewSubmission(id, reviewerId, status, rejectionReason, tx);
+      await commitColumnActions(tableId, tx);
+      await updateTableStatus(tableId, 'applied', tx);
 
+      await createAuditLog({
+        action: 'APPROVE_SUBMISSION',
+        entity_type: 'submission',
+        entity_id: id,
+        user_name: reviewedByName || reviewerId,
+        metadata: { table_id: tableId, reason: rejectionReason },
+      }, tx);
       await createAuditLog({
         action: 'EXECUTE_DDL',
         entity_type: 'table_definition',
-        entity_id: reviewedSubmission.table_id,
+        entity_id: tableId,
         user_name: 'DART_SYSTEM',
         metadata: {
           target_cluster: connInfo.cluster.name,
@@ -320,25 +373,33 @@ export const handleReviewAndSync = async (req: Request, res: Response): Promise<
           target_table: tableDef.table_name,
           statements,
         },
-      });
-    } catch (syncErr: any) {
-      // runDDLBatch attaches the failing statement so we can name the column
-      // that broke. Re-throw as an HttpError carrying the structured detail —
-      // errorHandler will serialize it.
-      if (syncErr instanceof HttpError) throw syncErr;
-      throw new HttpError(
-        500,
-        'Review recorded, but database schema push failed.',
-        buildDDLErrorDetail(syncErr),
-        true,
-      );
-    }
+      }, tx);
+
+      return reviewed;
+    });
+  } else {
+    // Rejection: no cluster change — record the decision and its statuses
+    // atomically so an audit/status write can't be left dangling.
+    reviewedSubmission = await withTransaction(async (tx) => {
+      const reviewed = await reviewSubmission(id, reviewerId, status, rejectionReason, tx);
+      await updateTableStatus(tableId, status, tx);
+
+      await createAuditLog({
+        action: 'REJECT_SUBMISSION',
+        entity_type: 'submission',
+        entity_id: id,
+        user_name: reviewedByName || reviewerId,
+        metadata: { table_id: tableId, reason: rejectionReason },
+      }, tx);
+
+      return reviewed;
+    });
   }
 
-  const tableDef = await getTableDefinitionDetails(reviewedSubmission.table_id);
+  const tableDef = await getTableDefinitionDetails(tableId);
   broadcastSubmissionEvent(status === 'approved' ? 'APPROVED' : 'REJECTED', {
     submittedBy: reviewedByName || reviewerId,
-    tableName: tableDef?.table_name || reviewedSubmission.table_id,
+    tableName: tableDef?.table_name || tableId,
     linkId: id,
     reason: rejectionReason,
   }).catch((e) => console.error('Webhook broadcast failed softly:', e));
