@@ -39,6 +39,16 @@ const actionRowAccent: Record<ColumnAction, string> = {
   Drop: "border-l-4 border-l-red-400",
 };
 
+// Maps the field labels produced by detectChangedFields onto the COLUMN_FIELDS
+// cell keys, so a Modify row can highlight the exact cell that changed. Only
+// the three attributes carried in the `previousColumns` cluster snapshot
+// (type / nullability / default) can be diffed — see PreviousColumnSnapshot.
+const DIFF_FIELD_TO_KEY: Record<string, string> = {
+  "Data Type": "dataType",
+  Nullable: "isNotNull",
+  Default: "defaultValue",
+};
+
 const actionBadgeVariant: Record<
   ColumnAction,
   "neutral" | "info" | "success" | "danger"
@@ -356,6 +366,22 @@ export const ReviewDrawer: React.FC = () => {
     const prev = prevByName.get(compareColumn.columnName.toLowerCase());
     return detectChangedFields(prev, compareColumn);
   }, [compareColumn, prevByName]);
+
+  // Per-row field diffs for Modify columns, computed once so the grid can both
+  // highlight the changed cells and render an always-visible "before → after"
+  // summary line — no need to open the Compare tab column-by-column.
+  const rowDiffs = useMemo(() => {
+    const map = new Map<
+      string,
+      Array<{ field: string; before: string; after: string }>
+    >();
+    for (const col of localColumns) {
+      if (col.action !== "Modify") continue;
+      const prev = prevByName.get(col.columnName.toLowerCase());
+      map.set(col.id, detectChangedFields(prev, col));
+    }
+    return map;
+  }, [localColumns, prevByName]);
 
   const hasUnsavedEdits = useMemo(() => {
     if (localColumns.length !== originalColumns.length) return true;
@@ -954,6 +980,18 @@ export const ReviewDrawer: React.FC = () => {
                           const selected = selectedIds.has(col.id);
                           const focused = focusedColumnId === col.id;
                           const expanded = expandedDetailIds.has(col.id);
+                          // Modify rows carry a field-level diff (empty when the
+                          // baseline snapshot is missing). Highlight the changed
+                          // cells and render a before → after line below the row.
+                          const diffs = rowDiffs.get(col.id) ?? [];
+                          const changedKeys = new Set(
+                            diffs
+                              .map((d) => DIFF_FIELD_TO_KEY[d.field])
+                              .filter(Boolean),
+                          );
+                          const hasBaseline = prevByName.has(
+                            col.columnName.toLowerCase(),
+                          );
                           return (
                             <React.Fragment key={col.id}>
                               <tr
@@ -992,7 +1030,11 @@ export const ReviewDrawer: React.FC = () => {
                                 {COLUMN_FIELDS.map((f) => (
                                   <td
                                     key={f.key}
-                                    className={`px-3 py-1.5 align-middle ${f.kind === "checkbox" ? "text-center" : ""}`}
+                                    className={`px-3 py-1.5 align-middle ${f.kind === "checkbox" ? "text-center" : ""} ${
+                                      !isEditing && changedKeys.has(f.key)
+                                        ? "bg-amber-50 ring-1 ring-inset ring-amber-300"
+                                        : ""
+                                    }`}
                                     style={{ minWidth: f.width, width: f.width }}
                                   >
                                     {isEditing ? (
@@ -1078,6 +1120,36 @@ export const ReviewDrawer: React.FC = () => {
                                   )}
                                 </td>
                               </tr>
+                              {!isEditing && col.action === "Modify" && (
+                                <tr>
+                                  <td colSpan={COLUMN_FIELDS.length + 4} className="px-3 pb-2 pt-0">
+                                    {diffs.length > 0 ? (
+                                      <div className="flex flex-wrap items-center gap-2">
+                                        <span className="text-[11px] font-medium uppercase tracking-wide text-blue-600">
+                                          Changed
+                                        </span>
+                                        {diffs.map((d) => (
+                                          <span
+                                            key={d.field}
+                                            className="inline-flex items-center gap-1 text-[11px] bg-blue-50 border border-blue-200 rounded px-2 py-0.5"
+                                          >
+                                            <span className="font-medium text-slate-600">{d.field}:</span>
+                                            <span className="font-mono text-red-600 line-through">{d.before}</span>
+                                            <span className="text-slate-400">→</span>
+                                            <span className="font-mono text-emerald-700">{d.after}</span>
+                                          </span>
+                                        ))}
+                                      </div>
+                                    ) : (
+                                      <span className="text-[11px] text-slate-400 italic">
+                                        {hasBaseline
+                                          ? "Marked Modify — no type / nullability / default change vs the cluster baseline."
+                                          : "Marked Modify — no cluster baseline captured, so field-level changes can't be shown here."}
+                                      </span>
+                                    )}
+                                  </td>
+                                </tr>
+                              )}
                               {isEditing && editError && (
                                 <tr>
                                   <td colSpan={COLUMN_FIELDS.length + 4} className="px-3 pb-2 pt-0">
